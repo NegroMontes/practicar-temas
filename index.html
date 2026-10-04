@@ -430,7 +430,7 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '3.6', APP_FECHA = '2026-10-04';
+const APP_VERSION = '3.7', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -2385,25 +2385,39 @@ function recomputePerfil(){
 /* ---------- Calentamiento guiado ----------
    Cada ejercicio arma su guía sonora a partir de una nota base que depende de la voz.
    «para» deja lugar a ejercicios propios de cada voz (S, A, T, B): null = para todas. */
+/* Antes de cada ejercicio con notas suena la nota de partida sostenida, para tomarla */
+const PARTIDA = 3, PARTIDA_PAUSA = .9;
+const partidaTxt = m => `Nota de partida: ${fullName(m)}. Tomala y sostenela con la guía…`;
 function seqPlan(b, steps, pattern, noteDur, gap){
-  const evs = []; let t = 0;
+  const evs = [], off = PARTIDA + PARTIDA_PAUSA; let t = off;
   const repLen = pattern.length * noteDur + gap;
   steps.forEach(st => { pattern.forEach(iv => { evs.push({t, m:b + st + iv}); t += noteDur; }); t += gap; });
   const dir = (a, b) => b > a ? '↑ más aguda' : b < a ? '↓ más grave' : '→ igual';
-  return {dur:t, sched:(t0, nodes) => evs.forEach(e => playNote(master, e.m, t0 + e.t, noteDur * .95, nodes)),
-    label:el => {
+  return {dur:t, sched:(t0, nodes) => {
+      playNote(master, b + steps[0], t0, PARTIDA, nodes);
+      evs.forEach(e => playNote(master, e.m, t0 + e.t, noteDur * .95, nodes));
+    },
+    label:el0 => {
+      if (el0 < PARTIDA) return partidaTxt(b + steps[0]);
+      if (el0 < off) return '¡Ahora empieza!';
+      const el = el0 - off;
       const k = Math.min(steps.length - 1, Math.floor(el / repLen)), inGap = el - k * repLen > pattern.length * noteDur;
       if (inGap) return k + 1 < steps.length ? `Ahora: ${dir(steps[k], steps[k + 1])}` : 'Última vuelta';
       return `Vuelta ${k + 1} de ${steps.length}${k ? ' · ' + dir(steps[k - 1], steps[k]).split(' ')[0] : ''}`;
     },
     // antes de empezar: cómo sigue
-    preview:`Las vueltas van ${steps.some((x, i) => i && x < steps[i - 1]) ? 'subiendo ↑ y después bajando ↓' : 'subiendo ↑'}, de a medio tono.`};
+    preview:`Primero suena la nota de partida sostenida. Después las vueltas van ${steps.some((x, i) => i && x < steps[i - 1]) ? 'subiendo ↑ y después bajando ↓' : 'subiendo ↑'}, de a medio tono.`};
 }
 function glidePlan(list){   // list: [desde, hasta, segundos] (sube y vuelve a bajar)
-  const gl = []; let t = 0;
+  const gl = [], off = PARTIDA + PARTIDA_PAUSA; let t = off;
   list.forEach(([a, c, d]) => { gl.push({t, a, c, d}); t += d + .4; });
-  return {dur:t, sched:(t0, nodes) => gl.forEach(g => playGlide(g.a, g.c, t0 + g.t, g.d, nodes)),
-    label:el => { const i = gl.findIndex(g => el < g.t + g.d + .4); return `Sirena ${i < 0 ? gl.length : i + 1} de ${gl.length}`; }};
+  return {dur:t, sched:(t0, nodes) => { playNote(master, list[0][0], t0, PARTIDA, nodes); gl.forEach(g => playGlide(g.a, g.c, t0 + g.t, g.d, nodes)); },
+    label:el => {
+      if (el < PARTIDA) return partidaTxt(list[0][0]);
+      if (el < off) return '¡Ahora empieza!';
+      const i = gl.findIndex(g => el < g.t + g.d + .4); return `Sirena ${i < 0 ? gl.length : i + 1} de ${gl.length}`;
+    },
+    preview:'Primero suena la nota de partida sostenida. Después cada sirena sube y vuelve a bajar, y la siguiente empieza un poco más arriba.'};
 }
 function breathPlan(){
   const cycles = 3, len = 12;
