@@ -552,7 +552,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '4.15', APP_FECHA = '2026-10-04';
+const APP_VERSION = '4.16', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -3120,7 +3120,14 @@ $('#pause').addEventListener('click', () => {
   if (!run) return;
   run.paused = !run.paused;
   if (run.paused){ ac.suspend(); setText(el.verdict, 'En pausa: tocá «Seguir» para continuar desde acá.'); el.verdict.className = 'verdict'; }
-  else ac.resume();
+  else {
+    ac.resume();
+    // al suspender el audio, el micrófono deja de llegar: se vuelve a abrir
+    if (run.mode === 'sing'){
+      const r = run; micStop();
+      micStart().then(() => { if (run !== r) micStop(); }).catch(e => { if (run === r) setMsg(micErrorText(e), true); });
+    }
+  }
   $('#pause').textContent = run.paused ? 'Seguir' : 'Pausa';
 });
 document.addEventListener('visibilitychange', () => {
