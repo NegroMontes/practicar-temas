@@ -227,6 +227,7 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
 .verdict.breath{color:var(--violet-strong)}
 .lyric .br{color:var(--violet);font-weight:700}
 #roll{cursor:grab}
+.btn.exit{width:100%;margin-top:14px;border-color:var(--line);color:var(--soft)}
 .prueba{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .sexbtns{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
 .sexbtns .small[aria-pressed="true"]{background:var(--violet);border-color:var(--violet);color:var(--on-violet)}
@@ -406,6 +407,7 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
         <button class="btn secondary" id="vzNext" type="button" style="grid-column:1/-1">Siguiente</button>
       </div>
       <button class="linkbtn" type="button" id="vzSkip" hidden>Saltar este paso</button>
+      <button class="btn secondary compact exit" type="button" id="vzExit">Salir de la prueba</button>
       <p class="msg" id="vzMsg" role="status"></p>
     </section>
 
@@ -430,7 +432,7 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '3.7', APP_FECHA = '2026-10-04';
+const APP_VERSION = '3.8', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -2515,7 +2517,13 @@ function wuRender(){
     <p class="wulive" id="wuLive">Leé la consigna…</p>
     <button class="linkbtn" type="button" data-w="now" id="wuStartNow" style="padding-top:0">Ya leí, empezar ahora</button>
     <div class="actions"><button class="btn secondary" type="button" data-w="pause" id="wuPause">Pausa</button><button class="btn primary" type="button" data-w="next">${last ? 'Ir a la prueba' : 'Siguiente'}</button></div>
-    <div class="filebtns" style="justify-content:space-between"><button class="linkbtn" type="button" data-w="rep">Repetir este ejercicio</button><button class="linkbtn" type="button" data-w="skip">Saltar a la prueba</button></div>`;
+    <div class="filebtns" style="justify-content:space-between"><button class="linkbtn" type="button" data-w="rep">Repetir este ejercicio</button><button class="linkbtn" type="button" data-w="skip">Saltar a la prueba</button></div>
+    <button class="btn secondary compact exit" type="button" data-w="exit">Salir de la prueba</button>`;
+}
+function exitTest(){   // vuelve al inicio de «Mi voz» sin guardar lo que se midió a medias
+  vzStop(); wuSilence(); WU.i = -1;
+  VZ.step = 'warm'; VZ.lo = VZ.hi = VZ.f0 = VZ.vtl = null; vzMsg('');
+  vzRender(); window.scrollTo(0, 0);
 }
 function goTest(warmed){
   wuSilence(); WU.i = -1;
@@ -2542,7 +2550,8 @@ $('#vzWarm').addEventListener('click', e => {
     case 'next': if (WU.i >= n - 1) goTest(true); else { WU.i++; wuRender(); wuPlay(WU_READ); } break;
     case 'ready': goTest(true); break;
     case 'cold': goTest(false); break;
-    case 'skip': goTest(WU.i >= 2); break;   // con 3 ejercicios ya cuenta como calentado
+    case 'skip': goTest(WU.i >= 2); break;
+    case 'exit': exitTest(); break;   // con 3 ejercicios ya cuenta como calentado
   }
 });
 
@@ -2707,6 +2716,7 @@ $('#vzNudge').addEventListener('click', e => {
 });
 $('#vzPlay').addEventListener('click', () => playTone(VZ.step === 'grave' ? VZ.lo : VZ.hi));
 $('#vzBack').addEventListener('click', () => { vzStop(); vzMsg(''); const i = STEPS.indexOf(VZ.step); VZ.step = i > 0 ? STEPS[i - 1] : 'warm'; vzRender(); });
+$('#vzExit').addEventListener('click', exitTest);
 $('#vzSkip').addEventListener('click', () => { vzStop(); vzMsg(''); VZ.step = STEPS[STEPS.indexOf(VZ.step) + 1]; vzRender(); });
 $('#vzNext').addEventListener('click', () => {
   vzStop(); vzMsg('');
