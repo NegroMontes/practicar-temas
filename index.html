@@ -343,6 +343,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
           <button class="small" type="button" data-e="undo" title="Deshacer (Ctrl+Z)">Deshacer</button>
           <button class="small confirm" type="button" data-e="confirm" title="Confirmar la nota (Enter)">✓ Confirmar</button>
           <button class="small" type="button" data-e="lyric" title="Escribir la sílaba de la nota (T)">✎ Letra</button>
+          <button class="small" type="button" data-e="measure" title="Duración del compás (C)">Compás…</button>
         </div>
         <div class="ebtns"><span class="hint" style="margin:0">Figura:</span>
           <button class="small" type="button" data-d="1" title="1">𝅝 redonda</button><button class="small" type="button" data-d="2" title="2">𝅗𝅥 blanca</button>
@@ -350,7 +351,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
           <button class="small" type="button" data-d="5" title="5">𝅘𝅥𝅯 semicorchea</button><button class="small" type="button" data-d="dot" title=".">· puntillo</button>
         </div>
         <details class="keys"><summary class="hint" style="margin:0">Atajos de teclado</summary>
-          <p class="hint">Tocá una nota para elegirla (arrastrala arriba o abajo para cambiar la altura). Tocá un lugar vacío para agregar notas ahí. <b>Espacio</b> escuchar desde la nota elegida, pausar y seguir · <b>← →</b> nota anterior / siguiente · <b>↑ ↓</b> medio tono (con Mayús, una octava) · <b>Q / E</b> mover el visor a la izquierda / derecha · nota + figura: <b>d r m f s l si</b> (do re mi fa sol la si; <b>+</b> sostenido, <b>-</b> bemol) seguidas de <b>1</b> redonda, <b>2</b> blanca, <b>3</b> negra, <b>4</b> corchea, <b>5</b> semicorchea (ej.: <b>d1</b> do redonda, <b>r2</b> re blanca, <b>f+3</b> fa sostenido negra) · un número solo cambia la figura · <b>.</b> puntillo · <b>Enter</b> confirma la nota (antes se ve punteada y suena) · <b>Esc</b> la descarta · <b>T</b> escribir la sílaba (espacio o guion pasan a la nota siguiente, Enter cierra) · <b>W</b> respiración · <b>Mayús+W</b> respiración con pausa para todas las voces · <b>Supr</b> borrar · <b>Ctrl+Z</b> deshacer · <b>Esc</b> soltar la nota.</p></details>
+          <p class="hint">Tocá una nota para elegirla (arrastrala arriba o abajo para cambiar la altura). Tocá un lugar vacío para agregar notas ahí. <b>Espacio</b> escuchar desde la nota elegida, pausar y seguir · <b>← →</b> nota anterior / siguiente · <b>↑ ↓</b> medio tono (con Mayús, una octava) · <b>Q / E</b> mover el visor a la izquierda / derecha · nota + figura: <b>d r m f s l si</b> (do re mi fa sol la si; <b>+</b> sostenido, <b>-</b> bemol) seguidas de <b>1</b> redonda, <b>2</b> blanca, <b>3</b> negra, <b>4</b> corchea, <b>5</b> semicorchea (ej.: <b>d1</b> do redonda, <b>r2</b> re blanca, <b>f+3</b> fa sostenido negra) · un número solo cambia la figura · <b>.</b> puntillo · <b>Enter</b> confirma la nota (antes se ve punteada y suena) · <b>Esc</b> la descarta · <b>C</b> duración del compás (mueve las barras, no las notas) · <b>T</b> escribir la sílaba (espacio o guion pasan a la nota siguiente, Enter cierra) · <b>W</b> respiración · <b>Mayús+W</b> respiración con pausa para todas las voces · <b>Supr</b> borrar · <b>Ctrl+Z</b> deshacer · <b>Esc</b> soltar la nota.</p></details>
       </div>
       <section class="meter" aria-label="Afinación">
         <div class="cell"><span class="lab">Tu voz</span><span class="big" id="sungNote">–</span></div>
@@ -532,6 +533,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
   </dl></details>
   <details class="kgrp" open><summary>Letra</summary><dl>
     <dt><kbd>T</kbd></dt><dd>escribir la sílaba de la nota elegida</dd>
+    <dt><kbd>C</kbd></dt><dd>cambiar la duración del compás (mueve las barras, no las notas)</dd>
     <dt><kbd>Espacio</kbd></dt><dd>guardar y pasar a la nota siguiente</dd>
     <dt><kbd>-</kbd></dt><dd>la palabra sigue (sílaba con guion) y pasa a la siguiente</dd>
     <dt><kbd>Enter</kbd> / <kbd>Esc</kbd></dt><dd>guardar y cerrar / cancelar</dd>
@@ -541,7 +543,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '4.8', APP_FECHA = '2026-10-04';
+const APP_VERSION = '4.9', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -2419,18 +2421,22 @@ const DUR_NAME = {4:'redonda', 2:'blanca', 1:'negra', .5:'corchea', .25:'semicor
 const NOTE_PC = {d:0, do:0, r:2, re:2, m:4, mi:4, f:5, fa:5, s:7, so:7, sol:7, l:9, la:9, si:11, b:11};
 function pushUndo(){
   const v = curVoice(); if (!v) return;
-  P.undo.push(JSON.stringify({vid:v.id, ev:v.ev, br:v.breaths || [], bo:v.breathOff || [], pz:P.song.pauses || [], ml:P.song.mlen}));
+  P.undo.push(JSON.stringify({vid:v.id, ev:v.ev, br:v.breaths || [], bo:v.breathOff || [], pz:P.song.pauses || [], ml:P.song.mlen, mlab:P.song.mlab || null, secs:P.song.sections}));
   if (P.undo.length > 80) P.undo.shift();
 }
 function undoEdit(){
   const u = P.undo.pop(); if (!u){ toast('No hay nada para deshacer.'); return; }
   const d = JSON.parse(u), v = P.song.voices.find(x => x.id === d.vid); if (!v) return;
   v.ev = d.ev; v.breaths = d.br; v.breathOff = d.bo; P.song.pauses = d.pz; P.song.mlen = d.ml;
+  if ('mlab' in d) P.song.mlab = d.mlab; if (d.secs) P.song.sections = d.secs;
   P.sel = null; afterEdit();
 }
 function afterEdit(doSave = true){
   if (doSave) save();
+  const n = P.song.mlen.length, changed = P.st.length - 1 !== n;
   P.st = measureStarts(P.song.mlen);
+  P.countIn = typicalCount(P.song);
+  if (changed || P.to > n){ P.to = Math.min(Math.max(P.to, 1), n); P.from = Math.min(P.from, P.to); buildRangeOptions(); }
   const vb = P.viewB; refreshEvs(); P.viewB = vb;
   ensureVisible(); updateEditBar(); draw();
 }
@@ -2504,10 +2510,60 @@ function confirmPending(){
   afterEdit();
   return true;
 }
+/* Duración de un compás: solo se mueven las barras (iguales para todas las voces); las notas quedan donde están */
+function lenToSig(len){
+  for (const d of [4, 8, 2, 16]){ const n = len * d / 4; if (Math.abs(n - Math.round(n)) < 1e-6 && n >= 1) return [Math.round(n), d]; }
+  return [Math.max(1, Math.round(len)), 4];
+}
+function measureDialog(){
+  const at = P.pending ? P.pending.at : P.sel ? P.sel.beat : P.addAt ?? G.nowB ?? P.st[P.from - 1];
+  const i = measureIdx(Math.max(0, at)), [n0, d0] = lenToSig(P.song.mlen[i]);
+  openDlg(`<h2>Compás ${esc(measureLabel(P.song, i))}</h2>
+    <p class="hint" style="margin-top:0">Cambia dónde caen las barras de compás (son las mismas para todas las voces). Las notas no se mueven ni cambian.</p>
+    <div class="two"><label>Tiempos <select id="msN">${Array.from({length:16}, (_, k) => `<option${k + 1 === n0 ? ' selected' : ''}>${k + 1}</option>`).join('')}</select></label>
+      <label>Figura de cada tiempo <select id="msD">${[[2, 'blanca (2)'], [4, 'negra (4)'], [8, 'corchea (8)'], [16, 'semicorchea (16)']].map(([d, t]) => `<option value="${d}"${d === d0 ? ' selected' : ''}>${t}</option>`).join('')}</select></label></div>
+    <label class="switch"><input type="checkbox" id="msAll"><span>También todos los compases siguientes</span></label>
+    <p class="hint">Ejemplos: 4/4 = cuatro negras · 3/4 = tres negras · 6/8 = seis corcheas · una anacrusa de una negra = 1/4 solo en el primer compás.</p>
+    <div class="dlgbtns"><button class="btn secondary compact" data-close type="button">Cancelar</button><button class="btn primary compact" id="msOk" type="button">Aplicar</button></div>`);
+  $('#msOk').addEventListener('click', () => {
+    const len = rnd(+$('#msN').value * 4 / +$('#msD').value), all = $('#msAll').checked;
+    dlg.close(); setMeasureLen(i, len, all);
+  });
+}
+function setMeasureLen(i, len, all){
+  const song = P.song;
+  pushUndo();
+  const ml = song.mlen.slice(0, i);
+  ml.push(len);
+  for (let k = i + 1; k < song.mlen.length; k++) ml.push(all ? len : song.mlen[k]);
+  // que entren todas las notas (y las pausas), sin compases vacíos de más al final
+  let need = 0;
+  song.voices.forEach(v => v.ev.forEach(e => need = Math.max(need, e.beat + e.dur)));
+  const total = () => ml.reduce((a, b) => a + b, 0);
+  while (total() < need - 1e-6) ml.push(ml[ml.length - 1]);
+  while (ml.length > i + 1 && total() - ml[ml.length - 1] >= need - 1e-6) ml.pop();
+  // números de compás: antes del cambio quedan; desde ahí siguen contando
+  if (song.mlab){
+    const base = parseInt(song.mlab[i], 10);
+    song.mlab = ml.map((_, k) => k < i ? song.mlab[k] : String((isNaN(base) ? i + 1 : base) + (k - i)));
+    if (song.mlab.every((l, k) => l === String(k + 1))) song.mlab = null;
+  }
+  // las partes (estrofas, estribillo) siguen abarcando la misma música: se recalculan por posición, no por número
+  const oldSt = measureStarts(song.mlen), newSt = measureStarts(ml);
+  const idxAt = b => { let k = 0; while (k < ml.length - 1 && newSt[k + 1] <= b + 1e-6) k++; return k; };
+  song.sections.forEach(sec => {
+    const b0 = oldSt[Math.min(sec.from, song.mlen.length) - 1], b1 = oldSt[Math.min(sec.to, song.mlen.length)];
+    sec.from = idxAt(b0) + 1; sec.to = Math.max(sec.from, idxAt(b1 - 1e-3) + 1);
+  });
+  song.mlen = ml.map(rnd);
+  afterEdit();
+  toast(`Compás ${measureLabel(song, i)}: ${lenToSig(len).join('/')}${all ? ' (y los siguientes)' : ''}. El tema tiene ${ml.length} compases.`);
+}
 function editAction(a){
   const v = curVoice(); if (!v || run) return;
   const list = v.ev, i = P.sel ? list.indexOf(P.sel) : -1;
   if (a === 'lyric') return startLyric();
+  if (a === 'measure') return measureDialog();
   if (a === 'confirm'){ if (!confirmPending()) toast('No hay ninguna nota para confirmar: escribí una nota y su figura (por ejemplo r2).'); return; }
   if (P.pending){
     const pn = P.pending, d = {up:1, down:-1, oup:12, odown:-12}[a];
@@ -2627,6 +2683,7 @@ window.addEventListener('keydown', e => {
   const c = k.length === 1 ? k.toLowerCase() : '';
   if (!c) return;
   if (!keyBuf && c === 't'){ e.preventDefault(); startLyric(); return; }
+  if (!keyBuf && c === 'c'){ e.preventDefault(); P.pending = null; measureDialog(); return; }
   if (!keyBuf && c === 'w'){ e.preventDefault(); editAction(e.shiftKey ? 'pause' : 'breath'); return; }
   if (!keyBuf && (c === 'q' || c === 'e')){
     e.preventDefault(); P.viewB = Math.max(P.st[P.from - 1] - 1, Math.min(P.st[P.to], (P.viewB ?? G.nowB) + (c === 'q' ? -2 : 2))); lyrKey = ''; draw(); return;
