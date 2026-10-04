@@ -1,0 +1,12 @@
+{
+  "name": "Practicar temas",
+  "short_name": "Practicar",
+  "description": "Practicá tu voz del coro con las partituras, con micrófono.",
+  "lang": "es",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#EEEAF5",
+  "theme_color": "#5B3F94",
+  "icons": [{"src": "icono.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]
+}
