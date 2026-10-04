@@ -248,6 +248,10 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
 }
 .keyspanel h2{font-size:15px;margin:0 0 4px}
 .keyspanel h3{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--violet-strong);margin:12px 0 4px}
+.keyspanel .khead{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.keyspanel .khead .small{min-height:32px;padding:0 10px;font-size:12px}
+.keyspanel summary{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--violet-strong);margin:12px 0 4px;cursor:pointer}
+.keyspanel details:not([open]) summary{margin-bottom:0}
 .keyspanel dl{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin:0}
 .keyspanel dt{white-space:nowrap;color:var(--soft)}
 .keyspanel dd{margin:0}
@@ -497,25 +501,22 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
   <footer><p id="version"></p></footer>
 </main>
 <aside class="keyspanel" id="keysPanel" aria-label="Atajos de teclado de la edición directa">
-  <h2>Atajos de teclado</h2>
-  <h3>Elegir y moverse</h3>
-  <dl>
+  <div class="khead"><h2>Atajos de teclado</h2><button class="small" type="button" id="keysToggle">Contraer todo</button></div>
+  <details class="kgrp" open><summary>Elegir y moverse</summary><dl>
     <dt><kbd>Espacio</kbd></dt><dd>escuchar desde la nota elegida · pausa · seguir</dd>
     <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>nota anterior / siguiente</dd>
     <dt><kbd>Q</kbd> <kbd>E</kbd></dt><dd>mover el visor a la izquierda / derecha</dd>
     <dt><kbd>Esc</kbd></dt><dd>soltar la nota</dd>
     <dt>clic</dt><dd>en una nota: elegirla · en un lugar vacío: agregar notas ahí</dd>
-  </dl>
-  <h3>Cambiar la nota</h3>
-  <dl>
+  </dl></details>
+  <details class="kgrp" open><summary>Cambiar la nota</summary><dl>
     <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>medio tono más aguda / más grave</dd>
     <dt><kbd>Mayús</kbd>+<kbd>↑</kbd> <kbd>↓</kbd></dt><dd>una octava</dd>
     <dt>arrastrar</dt><dd>la nota arriba o abajo</dd>
     <dt><kbd>Supr</kbd></dt><dd>borrar (queda silencio)</dd>
     <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd></dt><dd>deshacer</dd>
-  </dl>
-  <h3>Escribir notas</h3>
-  <dl>
+  </dl></details>
+  <details class="kgrp" open><summary>Escribir notas</summary><dl>
     <dt>nota</dt><dd><kbd>d</kbd> do · <kbd>r</kbd> re · <kbd>m</kbd> mi · <kbd>f</kbd> fa · <kbd>s</kbd> sol · <kbd>l</kbd> la · <kbd>si</kbd> si</dd>
     <dt><kbd>+</kbd> <kbd>-</kbd></dt><dd>sostenido / bemol (antes del número)</dd>
     <dt>figura</dt><dd><kbd>1</kbd> redonda · <kbd>2</kbd> blanca · <kbd>3</kbd> negra · <kbd>4</kbd> corchea · <kbd>5</kbd> semicorchea</dd>
@@ -524,25 +525,23 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
     <dt><kbd>.</kbd></dt><dd>puntillo</dd>
     <dt><kbd>Enter</kbd></dt><dd>confirmar la nota (antes se ve punteada y suena)</dd>
     <dt><kbd>Esc</kbd></dt><dd>descartar la vista previa</dd>
-  </dl>
-  <h3>Respiraciones</h3>
-  <dl>
+  </dl></details>
+  <details class="kgrp" open><summary>Respiraciones</summary><dl>
     <dt><kbd>W</kbd></dt><dd>respiración (solo tu voz, no cambia el tiempo)</dd>
     <dt><kbd>Mayús</kbd>+<kbd>W</kbd></dt><dd>respiración con pausa: todas las voces esperan</dd>
-  </dl>
-  <h3>Letra</h3>
-  <dl>
+  </dl></details>
+  <details class="kgrp" open><summary>Letra</summary><dl>
     <dt><kbd>T</kbd></dt><dd>escribir la sílaba de la nota elegida</dd>
     <dt><kbd>Espacio</kbd></dt><dd>guardar y pasar a la nota siguiente</dd>
     <dt><kbd>-</kbd></dt><dd>la palabra sigue (sílaba con guion) y pasa a la siguiente</dd>
     <dt><kbd>Enter</kbd> / <kbd>Esc</kbd></dt><dd>guardar y cerrar / cancelar</dd>
-  </dl>
+  </dl></details>
 </aside>
 <dialog id="dlg"></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '4.6', APP_FECHA = '2026-10-04';
+const APP_VERSION = '4.8', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -1820,6 +1819,12 @@ function ensureAudio(){
     master = ac.createGain(); master.gain.value = .85;
     const comp = ac.createDynamicsCompressor();
     master.connect(comp); comp.connect(ac.destination);
+    // sala: una reverberación corta y suave, como cantar en una iglesia chica
+    const len = Math.floor(ac.sampleRate * 2.2), ir = ac.createBuffer(2, len, ac.sampleRate);
+    for (let c = 0; c < 2; c++){ const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2); }
+    const rev = ac.createConvolver(); rev.buffer = ir;
+    const wet = ac.createGain(); wet.gain.value = .22;
+    master.connect(rev); rev.connect(wet); wet.connect(comp);
   }
   if (ac.state === 'suspended') ac.resume();
 }
@@ -1849,11 +1854,27 @@ function playNote(dest, midi, t, dur, nodes){
 }
 /* Voz cantada: diente de sierra + vibrato pasando por tres formantes de la vocal (a e i o u).
    Una cadena por voz para todo el tramo: cada nota cambia altura, vocal y envolvente. */
-const FORM = {
-  low:{a:[[600,0],[1040,-7],[2250,-9]], e:[[400,0],[1620,-12],[2400,-9]], i:[[250,0],[1750,-30],[2600,-16]], o:[[400,0],[750,-11],[2400,-21]], u:[[350,0],[600,-20],[2400,-32]]},
-  high:{a:[[800,0],[1150,-4],[2800,-20]], e:[[400,0],[1600,-24],[2700,-30]], i:[[350,0],[1700,-20],[2700,-30]], o:[[450,0],[800,-9],[2830,-16]], u:[[325,0],[700,-12],[2530,-30]]}
+/* Voz cantada, más natural:
+   - fuente con armónicos que caen como los de las cuerdas vocales (no un diente de sierra pelado),
+   - 5 formantes por vocal con tablas de soprano, contralto, tenor y bajo,
+   - cada cuerda suena como 3 cantantes apenas desafinados, con vibrato propio que aparece de a poco,
+   - un poco de aire, llegada a la nota desde un pelo abajo y legato en los melismas,
+   - y una sala (reverberación) suave en la salida. */
+const FORM5 = {
+  S:{a:[[800,0,80],[1150,-6,90],[2900,-32,120],[3900,-20,130],[4950,-50,140]], e:[[350,0,60],[2000,-20,100],[2800,-15,120],[3600,-40,150],[4950,-56,200]],
+     i:[[270,0,60],[2140,-12,90],[2950,-26,100],[3900,-26,120],[4950,-44,120]], o:[[450,0,70],[800,-11,80],[2830,-22,100],[3800,-22,130],[4950,-50,135]],
+     u:[[325,0,50],[700,-16,60],[2700,-35,170],[3800,-40,180],[4950,-60,200]]},
+  A:{a:[[800,0,80],[1150,-4,90],[2800,-20,120],[3500,-36,130],[4950,-60,140]], e:[[400,0,60],[1600,-24,80],[2700,-30,120],[3300,-35,150],[4950,-60,200]],
+     i:[[350,0,50],[1700,-20,100],[2700,-30,120],[3700,-36,150],[4950,-60,200]], o:[[450,0,70],[800,-9,80],[2830,-16,100],[3500,-28,130],[4950,-55,135]],
+     u:[[325,0,50],[700,-12,60],[2530,-30,170],[3500,-40,180],[4950,-64,200]]},
+  T:{a:[[650,0,80],[1080,-6,90],[2650,-7,120],[2900,-8,130],[3250,-22,140]], e:[[400,0,70],[1700,-14,80],[2600,-12,100],[3200,-14,120],[3580,-20,120]],
+     i:[[290,0,40],[1870,-15,90],[2800,-18,100],[3250,-20,120],[3540,-30,120]], o:[[400,0,40],[800,-10,80],[2600,-12,100],[2800,-12,120],[3000,-26,120]],
+     u:[[350,0,40],[600,-20,60],[2700,-17,100],[2900,-14,120],[3300,-26,120]]},
+  B:{a:[[600,0,60],[1040,-7,70],[2250,-9,110],[2450,-9,120],[2750,-20,130]], e:[[400,0,40],[1620,-12,80],[2400,-9,100],[2800,-12,120],[3100,-18,120]],
+     i:[[250,0,60],[1750,-30,90],[2600,-16,100],[3050,-22,120],[3340,-28,120]], o:[[400,0,40],[750,-11,80],[2400,-21,100],[2600,-20,120],[2900,-40,120]],
+     u:[[350,0,40],[600,-20,80],[2400,-32,100],[2675,-28,120],[2950,-36,120]]}
 };
-const FORM_BW = [80, 90, 120], FORM_GAIN = 2.2;
+const FORM_GAIN = 3.2, CHOIR = [[-8, 5.1], [0, 5.6], [7, 5.9]];   // desafinación (cents) y velocidad del vibrato de cada cantante
 function useVowels(){ try { return localStorage.getItem('pt.timbre') !== 'tono'; } catch(e){ return true; } }
 function vowelOf(syl){
   const t = (syl || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zñ]/g, '');
@@ -1862,33 +1883,66 @@ function vowelOf(syl){
   const weak = t.match(/[iu]/); if (weak) return weak[0];
   return t.includes('y') ? 'i' : null;
 }
-function voiceIsHigh(v){ return v && v.ev.length ? median(v.ev.map(e => e.midi)) >= 60 : true; }
+function voiceKind(v){   // qué tabla de formantes usar: por el nombre de la voz o por su altura
+  if (!v) return 'S';
+  const n = (v.name || '').trim(), r = REF.find(r => r.rx.test(n));
+  if (r) return r.id;
+  const m = v.ev.length ? median(v.ev.map(e => e.midi)) : 64;
+  return m >= 67 ? 'S' : m >= 60 ? 'A' : m >= 52 ? 'T' : 'B';
+}
+const kindOfMidi = m => m >= 67 ? 'S' : m >= 60 ? 'A' : m >= 52 ? 'T' : 'B';
 function lyricMap(song){   // sílabas de la voz con más letra: para las voces que no tienen letra propia
   const m = new Map(); let best = null, n = 0;
   song.voices.forEach(v => { const c = v.ev.filter(e => e.syl).length; if (c > n){ n = c; best = v; } });
   if (best) best.ev.forEach(e => { if (e.syl) m.set(e.beat, e.syl); });
   return m;
 }
-function vowelChain(dest, high, t0, t1, nodes){
-  const o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(220, t0);
-  const lfo = ac.createOscillator(); lfo.frequency.value = 5.3;
-  const lg = ac.createGain(); lg.gain.setValueAtTime(0, t0); lfo.connect(lg); lg.connect(o.frequency);
-  const env = ac.createGain(); env.gain.setValueAtTime(0, t0);
-  const fs = FORM_BW.map(() => { const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; const g = ac.createGain(); g.gain.value = 0; o.connect(bp); bp.connect(g); g.connect(env); return {bp, g}; });
-  env.connect(dest);
-  o.start(t0); lfo.start(t0); o.stop(t1); lfo.stop(t1); nodes.push(o, lfo);
-  return {o, lg, env, fs, high};
+let glottalWave = null, noiseBuf = null;
+function glottal(){   // armónicos que caen ~ 1/n^1.6, como la fuente de la voz
+  if (glottalWave) return glottalWave;
+  const N = 48, re = new Float32Array(N + 1), im = new Float32Array(N + 1);
+  for (let n = 1; n <= N; n++) im[n] = Math.pow(n, -1.6);
+  return glottalWave = ac.createPeriodicWave(re, im);
 }
-function vowelNote(ch, midi, vowel, t, dur){
-  const f = 440 * Math.pow(2, (midi - 69) / 12), end = t + Math.max(dur - .04, .08);
-  ch.o.frequency.setTargetAtTime(f, t, .012);
-  ch.lg.gain.setValueAtTime(0, t); ch.lg.gain.linearRampToValueAtTime(f * .006, t + Math.min(.4, dur * .6));
-  (FORM[ch.high ? 'high' : 'low'][vowel || 'a']).forEach(([F, db], i) => {
-    const k = ch.fs[i];
-    k.bp.frequency.setValueAtTime(F, t); k.bp.Q.setValueAtTime(F / FORM_BW[i], t); k.g.gain.setValueAtTime(Math.pow(10, db / 20) * FORM_GAIN, t);
+function breathNoise(){
+  if (noiseBuf) return noiseBuf;
+  noiseBuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+  const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return noiseBuf;
+}
+function vowelChain(dest, kind, t0, t1, nodes){
+  const src = ac.createGain(); src.gain.value = 1;
+  const oscs = CHOIR.map(([cents, rate]) => {
+    const o = ac.createOscillator(); o.setPeriodicWave(glottal()); o.frequency.setValueAtTime(220, t0); o.detune.value = cents;
+    const lfo = ac.createOscillator(); lfo.frequency.value = rate * (.97 + Math.random() * .06);
+    const lg = ac.createGain(); lg.gain.setValueAtTime(0, t0); lfo.connect(lg); lg.connect(o.detune);   // vibrato en cents
+    const g = ac.createGain(); g.gain.value = .42; o.connect(g); g.connect(src);
+    o.start(t0); lfo.start(t0); o.stop(t1); lfo.stop(t1); nodes.push(o, lfo);
+    return {o, lg};
   });
-  ch.env.gain.setTargetAtTime(.9, t, .02);
-  ch.env.gain.setTargetAtTime(0, end - .03, .025);
+  const nz = ac.createBufferSource(); nz.buffer = breathNoise(); nz.loop = true;
+  const ng = ac.createGain(); ng.gain.value = .035; nz.connect(ng); ng.connect(src); nz.start(t0); nz.stop(t1); nodes.push(nz);
+  const env = ac.createGain(); env.gain.setValueAtTime(0, t0);
+  const fs = [0, 1, 2, 3, 4].map(() => { const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; const g = ac.createGain(); g.gain.value = 0; src.connect(bp); bp.connect(g); g.connect(env); return {bp, g}; });
+  env.connect(dest);
+  return {oscs, env, fs, kind, last:null};
+}
+function vowelNote(ch, midi, vowel, t, dur, legato){
+  const f = 440 * Math.pow(2, (midi - 69) / 12), end = t + Math.max(dur - .05, .08);
+  ch.oscs.forEach(({o, lg}) => {
+    if (legato && ch.last != null) o.frequency.setTargetAtTime(f, t, .035);   // melisma: se desliza a la nota
+    else { o.frequency.setTargetAtTime(f * .986, t, .004); o.frequency.setTargetAtTime(f, t + .015, .045); }   // llega desde un pelo abajo
+    lg.gain.cancelScheduledValues(t); lg.gain.setValueAtTime(legato ? 18 : 0, t);
+    lg.gain.linearRampToValueAtTime(26, t + Math.min(.45, Math.max(.15, dur * .5)));   // el vibrato aparece de a poco
+  });
+  (FORM5[ch.kind] || FORM5.S)[vowel || 'a'].forEach(([F, db, bw], i) => {
+    const k = ch.fs[i];
+    k.bp.frequency.setTargetAtTime(F, t, .03); k.bp.Q.setTargetAtTime(F / bw, t, .03); k.g.gain.setTargetAtTime(Math.pow(10, db / 20) * FORM_GAIN, t, .03);
+  });
+  if (!legato) ch.env.gain.setTargetAtTime(.9, t, .025);
+  else ch.env.gain.setTargetAtTime(.9, t, .01);
+  ch.env.gain.setTargetAtTime(0, end - .02, legato ? .03 : .04);
+  ch.last = midi;
 }
 function click(t, accent, nodes){
   const o = ac.createOscillator(); o.type = 'sine'; o.frequency.value = accent ? 1500 : 1000;
@@ -1998,13 +2052,16 @@ function schedulePass(k){
       evs.forEach(e => { const s = Math.max(e.beat, run.startBeat), en = Math.min(e.beat + e.dur, run.endBeat); playNote(dest, e.midi, T(s), T(en) - T(s), run.nodes); });
       return;
     }
-    const ch = vowelChain(dest, voiceIsHigh(v), T(run.startBeat) - .05, t1, run.nodes);
+    const ch = vowelChain(dest, voiceKind(v), T(run.startBeat) - .05, t1, run.nodes);
     const before = [...v.ev].reverse().find(e => e.beat < run.startBeat && (e.syl || lyr.get(e.beat)));
     let vw = before ? vowelOf(before.syl || lyr.get(before.beat)) : 'a';
-    evs.forEach(e => {
+    // melisma: nota sin sílaba pegada a la anterior → se desliza sin cortar
+    const isLegato = i => { const e = evs[i], p = evs[i - 1]; return p && !(e.syl || lyr.get(e.beat)) && Math.abs(p.beat + p.dur - e.beat) < 1e-3; };
+    evs.forEach((e, i) => {
       const s = Math.max(e.beat, run.startBeat), en = Math.min(e.beat + e.dur, run.endBeat), syl = e.syl || lyr.get(e.beat);
-      if (syl) vw = vowelOf(syl);
-      vowelNote(ch, e.midi, vw, T(s), T(en) - T(s));
+      if (syl) vw = vowelOf(syl) || vw;
+      const tie = i + 1 < evs.length && isLegato(i + 1) ? .03 : 0;   // si sigue un melisma, no cerrar la nota
+      vowelNote(ch, e.midi, vw, T(s), T(en) - T(s) + tie, isLegato(i));
     });
   });
 }
@@ -2385,7 +2442,7 @@ function ensureVisible(){
 function previewNote(e){
   if (!e) return; ensureAudio();
   const nodes = [];
-  if (useVowels()){ const ch = vowelChain(master, voiceIsHigh(curVoice()), ac.currentTime, ac.currentTime + .7, nodes); vowelNote(ch, e.midi, vowelOf(e.syl) || 'a', ac.currentTime + .02, .55); }
+  if (useVowels()){ const ch = vowelChain(master, voiceKind(curVoice()), ac.currentTime, ac.currentTime + .8, nodes); vowelNote(ch, e.midi, vowelOf(e.syl) || 'a', ac.currentTime + .02, .6); }
   else playNote(master, e.midi, ac.currentTime + .02, .5, nodes);
 }
 function updateEditBar(){
@@ -2516,6 +2573,15 @@ $('#editBar').addEventListener('click', e => {
   else if (b.dataset.d === 'dot') editAction('dot');
   else enterNote(null, 0, +b.dataset.d);
 });
+/* Atajos del margen: cada grupo se pliega; «Contraer todo / Desplegar todo»; se recuerda */
+const kgrps = $$('#keysPanel .kgrp');
+function syncKeysToggle(){ $('#keysToggle').textContent = kgrps.some(d => d.open) ? 'Contraer todo' : 'Desplegar todo'; }
+try { const st = JSON.parse(localStorage.getItem('pt.atajos') || 'null'); if (Array.isArray(st)) kgrps.forEach((d, i) => d.open = st[i] !== false); } catch(e){}
+syncKeysToggle();
+const saveKeys = () => { try { localStorage.setItem('pt.atajos', JSON.stringify(kgrps.map(d => d.open))); } catch(e){} syncKeysToggle(); };
+kgrps.forEach(d => d.addEventListener('toggle', saveKeys));
+$('#keysToggle').addEventListener('click', () => { const open = !kgrps.some(d => d.open); kgrps.forEach(d => d.open = open); saveKeys(); });
+
 /* Espacio en la práctica (normal o edición directa): reproducir / pausar / seguir */
 window.addEventListener('keydown', e => {
   if (e.key !== ' ' || e.ctrlKey || e.metaKey || e.altKey || curView !== 'song' || dlg.open || !P.song || $('#songBody').hidden) return;
@@ -2594,7 +2660,7 @@ function matchStop(){ MT.on = false; cancelAnimationFrame(MT.raf); MT.nodes.forE
 function mtPlay(){
   const t = MT.list[MT.i]; if (!t) return;
   MT.nodes.forEach(o => { try { o.stop(); } catch(e){} }); MT.nodes = [];
-  if (useVowels()){ const ch = vowelChain(master, t.high ?? t.midi >= 60, ac.currentTime, ac.currentTime + 1.4, MT.nodes); vowelNote(ch, t.midi, t.vowel || 'a', ac.currentTime + .05, 1.2); }
+  if (useVowels()){ const ch = vowelChain(master, t.kind || kindOfMidi(t.midi), ac.currentTime, ac.currentTime + 1.5, MT.nodes); vowelNote(ch, t.midi, t.vowel || 'a', ac.currentTime + .05, 1.3); }
   else playNote(master, t.midi, ac.currentTime + .05, 1.2, MT.nodes);
   MT.listenAt = performance.now() + 1400; MT.hold = 0; MT.hist = []; MT.start = MT.listenAt;
   $('#mtTarget').textContent = nameOf(t.midi); $('#mtLabel').textContent = t.label || '';
@@ -2647,7 +2713,7 @@ function mtTick(now){
 $('#stepMode').addEventListener('click', () => {
   const list = [];
   P.evs.forEach(e => { if (list.length && list[list.length - 1].midi === e.midi && !e.syl) return;
-    list.push({midi:e.midi, vowel:vowelOf(e.syl), high:voiceIsHigh(curVoice()), label:`${e.syl ? `«${e.syl.replace(/-$/, '')}» · ` : ''}compás ${measureLabel(P.song, measureIdx(e.s))}`}); });
+    list.push({midi:e.midi, vowel:vowelOf(e.syl), kind:voiceKind(curVoice()), label:`${e.syl ? `«${e.syl.replace(/-$/, '')}» · ` : ''}compás ${measureLabel(P.song, measureIdx(e.s))}`}); });
   if (!list.length) return;
   matchDialog(`Nota por nota: ${curVoice().name}`, list);
 });
