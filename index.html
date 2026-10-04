@@ -346,7 +346,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
           <button class="small" type="button" data-d="5" title="5">𝅘𝅥𝅯 semicorchea</button><button class="small" type="button" data-d="dot" title=".">· puntillo</button>
         </div>
         <details class="keys"><summary class="hint" style="margin:0">Atajos de teclado</summary>
-          <p class="hint">Tocá una nota para elegirla (arrastrala arriba o abajo para cambiar la altura). Tocá un lugar vacío para agregar notas ahí. <b>← →</b> nota anterior / siguiente · <b>↑ ↓</b> medio tono (con Mayús, una octava) · <b>Q / E</b> mover el visor a la izquierda / derecha · nota + figura: <b>d r m f s l si</b> (do re mi fa sol la si; <b>+</b> sostenido, <b>-</b> bemol) seguidas de <b>1</b> redonda, <b>2</b> blanca, <b>3</b> negra, <b>4</b> corchea, <b>5</b> semicorchea (ej.: <b>d1</b> do redonda, <b>r2</b> re blanca, <b>f+3</b> fa sostenido negra) · un número solo cambia la figura · <b>.</b> puntillo · <b>Enter</b> confirma la nota (antes se ve punteada y suena) · <b>Esc</b> la descarta · <b>T</b> escribir la sílaba (espacio o guion pasan a la nota siguiente, Enter cierra) · <b>W</b> respiración · <b>Mayús+W</b> respiración con pausa para todas las voces · <b>Supr</b> borrar · <b>Ctrl+Z</b> deshacer · <b>Esc</b> soltar la nota.</p></details>
+          <p class="hint">Tocá una nota para elegirla (arrastrala arriba o abajo para cambiar la altura). Tocá un lugar vacío para agregar notas ahí. <b>Espacio</b> escuchar desde la nota elegida, pausar y seguir · <b>← →</b> nota anterior / siguiente · <b>↑ ↓</b> medio tono (con Mayús, una octava) · <b>Q / E</b> mover el visor a la izquierda / derecha · nota + figura: <b>d r m f s l si</b> (do re mi fa sol la si; <b>+</b> sostenido, <b>-</b> bemol) seguidas de <b>1</b> redonda, <b>2</b> blanca, <b>3</b> negra, <b>4</b> corchea, <b>5</b> semicorchea (ej.: <b>d1</b> do redonda, <b>r2</b> re blanca, <b>f+3</b> fa sostenido negra) · un número solo cambia la figura · <b>.</b> puntillo · <b>Enter</b> confirma la nota (antes se ve punteada y suena) · <b>Esc</b> la descarta · <b>T</b> escribir la sílaba (espacio o guion pasan a la nota siguiente, Enter cierra) · <b>W</b> respiración · <b>Mayús+W</b> respiración con pausa para todas las voces · <b>Supr</b> borrar · <b>Ctrl+Z</b> deshacer · <b>Esc</b> soltar la nota.</p></details>
       </div>
       <section class="meter" aria-label="Afinación">
         <div class="cell"><span class="lab">Tu voz</span><span class="big" id="sungNote">–</span></div>
@@ -362,7 +362,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
         <button class="btn stop" id="stop" type="button" hidden>Detener</button>
         <button class="btn secondary compact" id="stepMode" type="button" style="grid-column:1/-1">Nota por nota</button>
       </div>
-      <p class="msg" id="msg" role="status">Con auriculares, el micrófono capta mejor tu voz y no las otras voces.</p>
+      <p class="msg" id="msg" role="status">Con auriculares, el micrófono capta mejor tu voz y no las otras voces. En la compu, la barra espaciadora reproduce, pausa y sigue.</p>
       <section class="panel" id="results" hidden aria-live="polite">
         <h2>Cómo te fue</h2>
         <p id="resHead"></p>
@@ -500,6 +500,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
   <h2>Atajos de teclado</h2>
   <h3>Elegir y moverse</h3>
   <dl>
+    <dt><kbd>Espacio</kbd></dt><dd>escuchar desde la nota elegida · pausa · seguir</dd>
     <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>nota anterior / siguiente</dd>
     <dt><kbd>Q</kbd> <kbd>E</kbd></dt><dd>mover el visor a la izquierda / derecha</dd>
     <dt><kbd>Esc</kbd></dt><dd>soltar la nota</dd>
@@ -541,7 +542,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '4.5', APP_FECHA = '2026-10-04';
+const APP_VERSION = '4.6', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -1728,7 +1729,7 @@ function openSong(s){
   P.sel = null; P.addAt = null; P.undo = []; P.pending = null; $('#editMode').checked = P.edit; updateEditBar();
   buildSeg(); setSecRange(); buildRangeOptions(); buildMixer(); buildVoiceSel(); syncTempo();
   $('#loop').checked = P.loop; $('#singGuide').checked = P.singGuide;
-  setMsg(window.isSecureContext ? 'Con auriculares, el micrófono capta mejor tu voz y no las otras voces.' : micErrorText());
+  setMsg(window.isSecureContext ? 'Con auriculares, el micrófono capta mejor tu voz y no las otras voces. En la compu, la barra espaciadora reproduce, pausa y sigue.' : micErrorText());
   if (secureLink()) msg.innerHTML = esc(msg.textContent.split(':')[0]) + ': ' + secureLink() + '.';
   refreshEvs(); resetMeter(); readColors(); resize();
 }
@@ -2514,6 +2515,22 @@ $('#editBar').addEventListener('click', e => {
   if (b.dataset.e) editAction(b.dataset.e);
   else if (b.dataset.d === 'dot') editAction('dot');
   else enterNote(null, 0, +b.dataset.d);
+});
+/* Espacio en la práctica (normal o edición directa): reproducir / pausar / seguir */
+window.addEventListener('keydown', e => {
+  if (e.key !== ' ' || e.ctrlKey || e.metaKey || e.altKey || curView !== 'song' || dlg.open || !P.song || $('#songBody').hidden) return;
+  const a = document.activeElement, tag = a && a.tagName;
+  if (tag === 'TEXTAREA' || tag === 'SELECT' || (tag === 'INPUT' && !/^(checkbox|radio|range)$/.test(a.type))) return;   // escribiendo: espacio normal
+  e.preventDefault();
+  if (a && a !== document.body) a.blur();   // que no se apriete además el botón que tenía el foco
+  if (run){ $('#pause').click(); return; }
+  // empieza desde la nota elegida o desde donde se movió el visor
+  const at = P.edit && P.sel ? P.sel.beat : P.viewB;
+  if (at != null){
+    const m = measureIdx(Math.max(at, P.st[P.from - 1])) + 1;
+    if (m > P.from && m <= P.to){ P.from = m; syncRange(); refreshEvs(); }
+  }
+  start('listen');
 });
 let keyBuf = '', keyAlt = 0, keyTime = 0;
 window.addEventListener('keydown', e => {
