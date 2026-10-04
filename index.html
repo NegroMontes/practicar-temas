@@ -447,7 +447,7 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '3.10', APP_FECHA = '2026-10-04';
+const APP_VERSION = '3.12', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -713,6 +713,40 @@ function splitName(p, i, n){
   const t = p.split(/\s*(?:\/|,|&|\+|\by\b|\band\b|\s)\s*/i).filter(Boolean);
   return t.length === n ? t[i] : null;
 }
+/* Una voz escrita con acordes (dos o más notas en la misma plica) se separa en voces:
+   la nota de arriba para la primera, la siguiente para la segunda, etc. Donde vuelve a haber
+   una sola nota, las voces cantan al unísono; en tramos largos sin acordes la voz agregada calla.
+   Si los acordes son pocos (un divisi suelto), queda una sola voz con la nota de arriba. */
+function makeLayers(groups){
+  const maxN = Math.max(1, ...groups.map(g => g.notes.length));
+  const chords = groups.filter(g => g.notes.length > 1).length;
+  const n = maxN > 1 && (chords >= 8 || chords >= groups.length * .15) ? maxN : 1;
+  groups.forEach(g => g.notes.sort((a, b) => b.midi - a.midi));
+  const brs = [...(groups.br || []), ...groups.filter(g => g.breath).map(g => rnd(g.beat + g.dur))];
+  const layers = [];
+  for (let L = 0; L < n; L++){
+    const active = groups.map(() => L === 0);
+    if (L > 0){
+      const idx = groups.map((g, i) => g.notes.length > L ? i : -1).filter(i => i >= 0);
+      idx.forEach((a, k) => {
+        active[a] = true;
+        const b = idx[k + 1];
+        if (b != null && groups[b].beat - (groups[a].beat + groups[a].dur) <= 8) for (let i = a + 1; i < b; i++) active[i] = true;
+      });
+    }
+    const ev = [];
+    groups.forEach((g, i) => {
+      if (!active[i]) return;
+      const nt = g.notes[Math.min(L, g.notes.length - 1)], prev = ev[ev.length - 1];
+      if (nt.tieStop && prev && prev.midi === nt.midi && Math.abs(prev.beat + prev.dur - g.beat) < 1e-3) prev.dur = rnd(prev.dur + g.dur);
+      else ev.push({beat:g.beat, dur:g.dur, midi:nt.midi, syl:g.syl});
+    });
+    if (!ev.length) continue;
+    ev.br = brs.filter(b => ev.some(e => Math.abs(e.beat + e.dur - b) < 1e-3));
+    layers.push(ev);
+  }
+  return layers;
+}
 function parseMusicXML(text, fname){
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.querySelector('parsererror')) throw new Error('El archivo no es un MusicXML válido.');
@@ -748,20 +782,25 @@ function parseMusicXML(text, fname){
         } else if (el.nodeName === 'note'){
           if (kid(el, 'grace') || kid(el, 'cue')) continue;
           const dur = +(txt(el, 'duration') || 0) / div;
-          if (kid(el, 'chord')) continue;               // de un acorde nos quedamos con la primera nota
-          const start = cur; lastStart = cur; cur += dur; maxc = Math.max(maxc, cur);
+          const isChord = !!kid(el, 'chord');   // otra nota del mismo acorde: empieza junto con la anterior
+          const start = isChord ? lastStart : cur;
+          if (!isChord){ lastStart = cur; cur += dur; maxc = Math.max(maxc, cur); }
           const pitch = kid(el, 'pitch'); if (!pitch) continue;   // silencio
           const midi = 12 * (+txt(pitch, 'octave') + 1) + PC[txt(pitch, 'step')] + Math.round(+(txt(pitch, 'alter') || 0)) + transp;
           const key = (txt(el, 'staff') || '1') + '/' + (txt(el, 'voice') || '1');
           if (!voices.has(key)) voices.set(key, []);
-          const ev = voices.get(key), b = rnd(mStart + start), prev = ev[ev.length - 1];
-          const lyr = kids(el, 'lyric'), l1 = lyr.find(l => (l.getAttribute('number') || '1') === '1') || lyr[0];
-          const sb = l1 ? txt(l1, 'syllabic') : null;
-          const syl = l1 ? [...l1.children].map(c => c.nodeName === 'text' ? c.textContent : c.nodeName === 'elision' ? '‿' : '').join('').trim() + (sb === 'begin' || sb === 'middle' ? '-' : '') : '';
+          const gs = voices.get(key), b = rnd(mStart + start);
           const tieStop = kids(el, 'tie').some(t => t.getAttribute('type') === 'stop');
-          if (tieStop && prev && prev.midi === midi && Math.abs(prev.beat + prev.dur - b) < 1e-3) prev.dur = rnd(prev.dur + dur);
-          else ev.push({beat:b, dur:rnd(dur), midi, syl});
-          if (el.querySelector('breath-mark')){ const last = ev[ev.length - 1]; (ev.br = ev.br || []).push(rnd(last.beat + last.dur)); }
+          let g = gs[gs.length - 1];
+          if (isChord && g && Math.abs(g.beat - b) < 1e-3) g.notes.push({midi, tieStop});
+          else {
+            const lyr = kids(el, 'lyric'), l1 = lyr.find(l => (l.getAttribute('number') || '1') === '1') || lyr[0];
+            const sb = l1 ? txt(l1, 'syllabic') : null;
+            const syl = l1 ? [...l1.children].map(c => c.nodeName === 'text' ? c.textContent : c.nodeName === 'elision' ? '‿' : '').join('').trim() + (sb === 'begin' || sb === 'middle' ? '-' : '') : '';
+            g = {beat:b, dur:rnd(dur), notes:[{midi, tieStop}], syl};
+            gs.push(g);
+          }
+          if (el.querySelector('breath-mark')) g.breath = true;
         }
       }
       void lastStart;
@@ -772,9 +811,10 @@ function parseMusicXML(text, fname){
     if (!mlen){ mlen = lens; mlab = labs; }
     const keys = [...voices.keys()].filter(k => voices.get(k).length).sort((a, b) => {
       const [sa, va] = a.split('/').map(Number), [sb, vb] = b.split('/').map(Number); return sa - sb || va - vb; });
-    keys.forEach((key, i) => {
-      const ev = voices.get(key);
-      const name = keys.length > 1 ? (splitName(pname, i, keys.length) || `${pname || 'Parte ' + (pi + 1)} · ${i + 1}`) : (pname || `Parte ${pi + 1}`);
+    const layered = [];
+    keys.forEach(key => makeLayers(voices.get(key)).forEach(ev => layered.push(ev)));
+    layered.forEach((ev, i) => {
+      const name = layered.length > 1 ? (splitName(pname, i, layered.length) || `${pname || 'Parte ' + (pi + 1)} · ${i + 1}`) : (pname || `Parte ${pi + 1}`);
       // Tenor escrito en clave de Sol común: suena una octava más abajo de lo escrito
       let shift = 0;
       if (/ten/i.test(name) && gclefPlain && transp === 0) shift = -12;
@@ -913,15 +953,13 @@ function parseMscx(text, fname){
             let d = dt === 'measure' ? frac(txt(el, 'duration') || '0') : (MS_DUR[dt] || 0);
             const dots = +(txt(el, 'dots') || 0); if (dots && dt !== 'measure') d *= 2 - Math.pow(.5, dots);
             d *= tf[tf.length - 1];
-            const note = nn === 'Chord' && kid(el, 'Note');   // de un acorde nos quedamos con la primera nota
-            if (note){
-              const midi = +txt(note, 'pitch'), b = rnd(mStart + cur), prev = ev[ev.length - 1];
+            const notes = nn === 'Chord' ? kids(el, 'Note') : [];
+            if (notes.length){
               const lyr = kids(el, 'Lyrics'), l1 = lyr.find(l => !txt(l, 'no') || txt(l, 'no') === '0') || lyr[0];
               const sb = l1 ? txt(l1, 'syllabic') : null;
               const syl = l1 ? lyricText(kid(l1, 'text')) + (sb === 'begin' || sb === 'middle' ? '-' : '') : '';
-              const tieNext = kids(note, 'Spanner').some(sp => sp.getAttribute('type') === 'Tie' && kid(sp, 'next')) || !!kid(note, 'Tie');
-              if (prev && prev.tie && prev.midi === midi && Math.abs(prev.beat + prev.dur - b) < 1e-3){ prev.dur = rnd(prev.dur + d); prev.tie = tieNext; }
-              else ev.push({beat:b, dur:rnd(d), midi, syl, tie:tieNext});
+              ev.push({beat:rnd(mStart + cur), dur:rnd(d), syl, notes:notes.map(n => ({midi:+txt(n, 'pitch'),
+                tieStop:kids(n, 'Spanner').some(sp => sp.getAttribute('type') === 'Tie' && kid(sp, 'prev'))}))});
             }
             cur += d;
           }
@@ -934,8 +972,10 @@ function parseMscx(text, fname){
     }
     if (!mlen){ mlen = lens; mlab = labs; }
     const keys = [...voices.keys()].filter(k => voices.get(k).length).sort((a, b) => a - b);
-    keys.forEach((k, i) => cands.push({name:keys.length > 1 ? (splitName(sname, i, keys.length) || `${sname} · ${i + 1}`) : sname,
-      ev:voices.get(k).map(({tie, ...e}) => e), shift:0, breaths:voices.get(k).br || []}));
+    const layered = [];
+    keys.forEach(k => makeLayers(voices.get(k)).forEach(ev => layered.push(ev)));
+    layered.forEach((ev, i) => cands.push({name:layered.length > 1 ? (splitName(sname, i, layered.length) || `${sname} · ${i + 1}`) : sname,
+      ev, shift:0, breaths:ev.br || []}));
   });
   if (!cands.length) throw new Error('No encontré notas en el archivo de MuseScore.');
   const ml = mlab && mlab.every((l, i) => l === String(i + 1)) ? null : mlab;
@@ -1807,8 +1847,10 @@ async function start(mode){
   setBusy(true);
   $('#lvlBox').hidden = mode !== 'sing';
   $('#results').hidden = true; P.status = P.scores = P.summary = null;
-  run.raf = requestAnimationFrame(tick);
+  nextTick();
 }
+// con la pestaña oculta no hay cuadros de animación: se sigue con un reloj común
+function nextTick(){ if (!run) return; if (document.hidden) run.timer = setTimeout(tick, 50); else run.raf = requestAnimationFrame(tick); }
 function newAcc(){ run.acc = run.evs.map(() => ({total:0, good:0, sum:0, n:0})); run.trace = []; }
 function evAt(local){ return run.evs.findIndex(e => local >= e.s && local < e.e); }
 function tick(){
@@ -1830,7 +1872,7 @@ function tick(){
   if (run.mode === 'sing' && analyser && now - run.lastFrame >= 30){ run.lastFrame = now; frame(now); }
   else if (run.mode === 'listen') listenMeter();
   draw();
-  run.raf = requestAnimationFrame(tick);
+  nextTick();
 }
 const bleed = [];   // niveles del parlante (otras voces) que llegan al micrófono en este dispositivo
 const pcDist = (a, b) => { const d = ((a - b) % 12 + 12) % 12; return Math.min(d, 12 - d); };
@@ -1908,7 +1950,7 @@ function stop(natural){
   if (!run) return;
   const r = run;
   if (!natural && r.mode === 'sing' && r.nowRel > 0) finalizePass(r.local);
-  cancelAnimationFrame(r.raf);
+  cancelAnimationFrame(r.raf); clearTimeout(r.timer);
   r.nodes.forEach(o => { try { o.stop(); } catch(e){} });
   run = null;
   micStop(); applyGains(false);
@@ -2314,7 +2356,10 @@ $('#mixer').addEventListener('click', e => {
 $('#listen').addEventListener('click', () => start('listen'));
 $('#sing').addEventListener('click', () => start('sing'));
 $('#stop').addEventListener('click', () => stop(false));
-document.addEventListener('visibilitychange', () => { if (document.hidden){ if (run) stop(false); vzStop(); wuSilence(); } });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden){ vzStop(); if (MT.on) dlg.close(); }
+  else if (ac && ac.state !== 'running' && !WU.paused) ac.resume();   // iOS puede haber pausado el sonido
+});
 
 /* ---------- ¿Cuál es mi voz? ----------
    La prueba junta cuatro mediciones: la voz hablada (altura media al hablar), el color de la voz
