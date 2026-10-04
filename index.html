@@ -370,7 +370,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
         <button class="btn stop" id="stop" type="button" hidden>Detener</button>
         <button class="btn secondary compact" id="stepMode" type="button" style="grid-column:1/-1">Nota por nota</button>
       </div>
-      <p class="msg" id="msg" role="status">Con auriculares, el micrófono capta mejor tu voz y no las otras voces. En la compu, la barra espaciadora reproduce, pausa y sigue.</p>
+      <p class="msg" id="msg" role="status">Con auriculares, el micrófono capta mejor tu voz y no las otras voces. En la compu: barra espaciadora reproduce, pausa y sigue; Q y E mueven el visor.</p>
       <section class="panel" id="results" hidden aria-live="polite">
         <h2>Cómo te fue</h2>
         <p id="resHead"></p>
@@ -546,7 +546,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '4.11', APP_FECHA = '2026-10-04';
+const APP_VERSION = '4.12', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -1741,7 +1741,7 @@ function openSong(s){
   P.sel = null; P.addAt = null; P.undo = []; P.pending = null; $('#editMode').checked = P.edit; updateEditBar();
   buildSeg(); setSecRange(); buildRangeOptions(); buildMixer(); buildVoiceSel(); syncTempo();
   $('#loop').checked = P.loop; $('#singGuide').checked = P.singGuide;
-  setMsg(window.isSecureContext ? 'Con auriculares, el micrófono capta mejor tu voz y no las otras voces. En la compu, la barra espaciadora reproduce, pausa y sigue.' : micErrorText());
+  setMsg(window.isSecureContext ? 'Con auriculares, el micrófono capta mejor tu voz y no las otras voces. En la compu: barra espaciadora reproduce, pausa y sigue; Q y E mueven el visor.' : micErrorText());
   if (secureLink()) msg.innerHTML = esc(msg.textContent.split(':')[0]) + ': ' + secureLink() + '.';
   refreshEvs(); resetMeter(); readColors(); resize();
 }
@@ -2283,7 +2283,7 @@ function updateLyric(nowB){
 function draw(){
   const w = cv.clientWidth, h = cv.clientHeight; if (!w || !P.song || !P.song.mlen.length) return;
   ctx.clearRect(0, 0, w, h);
-  updateLyric(run ? run.local : P.st[P.from - 1]);
+  updateLyric(run ? run.local : (P.viewB ?? P.st[P.from - 1]));   // sin reproducir, la letra acompaña al visor
   ctx.fillStyle = C.stage; ctx.fillRect(0, 0, w, h);
   const pnM = P.edit && P.pending ? P.pending.midi : null;
   const lo = Math.min(P.range.lo, pnM ?? 999) - 1, hi = Math.max(P.range.hi, pnM ?? 0) + 1;
@@ -2703,6 +2703,17 @@ syncKeysToggle();
 const saveKeys = () => { try { localStorage.setItem('pt.atajos', JSON.stringify(kgrps.map(d => d.open))); } catch(e){} syncKeysToggle(); };
 kgrps.forEach(d => d.addEventListener('toggle', saveKeys));
 $('#keysToggle').addEventListener('click', () => { const open = !kgrps.some(d => d.open); kgrps.forEach(d => d.open = open); saveKeys(); });
+
+/* Q / E fuera de la edición directa: mover el visor a la izquierda / derecha (en la edición lo maneja su teclado) */
+window.addEventListener('keydown', e => {
+  if (P.edit || run || e.ctrlKey || e.metaKey || e.altKey || curView !== 'song' || dlg.open || !P.song || $('#songBody').hidden) return;
+  const c = e.key.toLowerCase(); if (c !== 'q' && c !== 'e') return;
+  const a = document.activeElement, tag = a && a.tagName;
+  if (tag === 'TEXTAREA' || tag === 'SELECT' || (tag === 'INPUT' && !/^(checkbox|radio|range)$/.test(a.type))) return;
+  e.preventDefault();
+  P.viewB = Math.max(P.st[P.from - 1] - 1, Math.min(P.st[P.to], (P.viewB ?? G.nowB) + (c === 'q' ? -2 : 2)));
+  lyrKey = ''; draw();
+});
 
 /* Espacio en la práctica (normal o edición directa): reproducir / pausar / seguir */
 window.addEventListener('keydown', e => {
