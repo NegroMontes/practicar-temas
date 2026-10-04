@@ -253,6 +253,10 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
 .keyspanel dd{margin:0}
 kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;background:var(--stage);font:700 12px/18px "Atkinson Hyperlegible",system-ui,sans-serif;text-align:center;color:var(--ink)}
 .ebtns .small.confirm{border-color:var(--warn);color:var(--warn)}
+.lyredit{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0 6px}
+.lyredit label{font-weight:700;font-size:14px}
+.lyredit input{width:auto;flex:1;min-width:120px;font:500 20px "EB Garamond",Georgia,serif}
+.lyredit .hint{flex-basis:100%;margin:2px 0 0}
 .prueba{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .sexbtns{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
 .sexbtns .small[aria-pressed="true"]{background:var(--violet);border-color:var(--violet);color:var(--on-violet)}
@@ -317,6 +321,13 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
       <label class="switch"><input type="checkbox" id="editMode" role="switch" data-lock><span>Edición directa</span></label>
       <div class="editbar" id="editBar" hidden>
         <p class="hint" id="editWhat" style="margin:0 0 6px"></p>
+        <div class="lyredit" id="lyrEdit" hidden>
+          <label for="lyrIn">Sílaba</label>
+          <input type="text" id="lyrIn" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button class="small" type="button" id="lyrNext">Siguiente</button>
+          <button class="small" type="button" id="lyrDone">Listo</button>
+          <p class="hint">Espacio: guarda y pasa a la nota siguiente · guion (-): la palabra sigue · Enter: guardar y cerrar · Esc: cancelar · vacío: la nota queda sin sílaba.</p>
+        </div>
         <div class="ebtns">
           <button class="small" type="button" data-e="prev" title="Nota anterior (←)">◀</button>
           <button class="small" type="button" data-e="next" title="Nota siguiente (→)">▶</button>
@@ -327,6 +338,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
           <button class="small danger" type="button" data-e="del" title="Borrar la nota (Supr)">Borrar</button>
           <button class="small" type="button" data-e="undo" title="Deshacer (Ctrl+Z)">Deshacer</button>
           <button class="small confirm" type="button" data-e="confirm" title="Confirmar la nota (Enter)">✓ Confirmar</button>
+          <button class="small" type="button" data-e="lyric" title="Escribir la sílaba de la nota (T)">✎ Letra</button>
         </div>
         <div class="ebtns"><span class="hint" style="margin:0">Figura:</span>
           <button class="small" type="button" data-d="1" title="1">𝅝 redonda</button><button class="small" type="button" data-d="2" title="2">𝅗𝅥 blanca</button>
@@ -334,7 +346,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
           <button class="small" type="button" data-d="5" title="5">𝅘𝅥𝅯 semicorchea</button><button class="small" type="button" data-d="dot" title=".">· puntillo</button>
         </div>
         <details class="keys"><summary class="hint" style="margin:0">Atajos de teclado</summary>
-          <p class="hint">Tocá una nota para elegirla (arrastrala arriba o abajo para cambiar la altura). Tocá un lugar vacío para agregar notas ahí. <b>← →</b> nota anterior / siguiente · <b>↑ ↓</b> medio tono (con Mayús, una octava) · <b>Q / E</b> mover el visor a la izquierda / derecha · nota + figura: <b>d r m f s l si</b> (do re mi fa sol la si; <b>+</b> sostenido, <b>-</b> bemol) seguidas de <b>1</b> redonda, <b>2</b> blanca, <b>3</b> negra, <b>4</b> corchea, <b>5</b> semicorchea (ej.: <b>d1</b> do redonda, <b>r2</b> re blanca, <b>f+3</b> fa sostenido negra) · un número solo cambia la figura · <b>.</b> puntillo · <b>Enter</b> confirma la nota (antes se ve punteada y suena) · <b>Esc</b> la descarta · <b>W</b> respiración · <b>Mayús+W</b> respiración con pausa para todas las voces · <b>Supr</b> borrar · <b>Ctrl+Z</b> deshacer · <b>Esc</b> soltar la nota.</p></details>
+          <p class="hint">Tocá una nota para elegirla (arrastrala arriba o abajo para cambiar la altura). Tocá un lugar vacío para agregar notas ahí. <b>← →</b> nota anterior / siguiente · <b>↑ ↓</b> medio tono (con Mayús, una octava) · <b>Q / E</b> mover el visor a la izquierda / derecha · nota + figura: <b>d r m f s l si</b> (do re mi fa sol la si; <b>+</b> sostenido, <b>-</b> bemol) seguidas de <b>1</b> redonda, <b>2</b> blanca, <b>3</b> negra, <b>4</b> corchea, <b>5</b> semicorchea (ej.: <b>d1</b> do redonda, <b>r2</b> re blanca, <b>f+3</b> fa sostenido negra) · un número solo cambia la figura · <b>.</b> puntillo · <b>Enter</b> confirma la nota (antes se ve punteada y suena) · <b>Esc</b> la descarta · <b>T</b> escribir la sílaba (espacio o guion pasan a la nota siguiente, Enter cierra) · <b>W</b> respiración · <b>Mayús+W</b> respiración con pausa para todas las voces · <b>Supr</b> borrar · <b>Ctrl+Z</b> deshacer · <b>Esc</b> soltar la nota.</p></details>
       </div>
       <section class="meter" aria-label="Afinación">
         <div class="cell"><span class="lab">Tu voz</span><span class="big" id="sungNote">–</span></div>
@@ -517,12 +529,19 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
     <dt><kbd>W</kbd></dt><dd>respiración (solo tu voz, no cambia el tiempo)</dd>
     <dt><kbd>Mayús</kbd>+<kbd>W</kbd></dt><dd>respiración con pausa: todas las voces esperan</dd>
   </dl>
+  <h3>Letra</h3>
+  <dl>
+    <dt><kbd>T</kbd></dt><dd>escribir la sílaba de la nota elegida</dd>
+    <dt><kbd>Espacio</kbd></dt><dd>guardar y pasar a la nota siguiente</dd>
+    <dt><kbd>-</kbd></dt><dd>la palabra sigue (sílaba con guion) y pasa a la siguiente</dd>
+    <dt><kbd>Enter</kbd> / <kbd>Esc</kbd></dt><dd>guardar y cerrar / cancelar</dd>
+  </dl>
 </aside>
 <dialog id="dlg"></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '4.3', APP_FECHA = '2026-10-04';
+const APP_VERSION = '4.4', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -2298,7 +2317,8 @@ cv.addEventListener('pointerdown', e => {
   if (P.edit){
     P.pending = null;
     const hit = hitNote(canvasPoint(e));
-    if (hit){ P.sel = hit; P.addAt = null; drag = {mode:'pitch', y:e.clientY, base:hit.midi, steps:0, moved:false}; updateEditBar(); draw(); previewNote(hit); return; }
+    if (hit){ if (!$('#lyrEdit').hidden){ lyrIn.value = hit.syl || ''; setTimeout(() => { lyrIn.focus(); lyrIn.select(); }, 0); }
+      P.sel = hit; P.addAt = null; drag = {mode:'pitch', y:e.clientY, base:hit.midi, steps:0, moved:false}; updateEditBar(); draw(); previewNote(hit); return; }
   }
   drag = {mode:'pan', x:e.clientX, v:G.nowB, moved:false};
 });
@@ -2418,6 +2438,7 @@ function confirmPending(){
 function editAction(a){
   const v = curVoice(); if (!v || run) return;
   const list = v.ev, i = P.sel ? list.indexOf(P.sel) : -1;
+  if (a === 'lyric') return startLyric();
   if (a === 'confirm'){ if (!confirmPending()) toast('No hay ninguna nota para confirmar: escribí una nota y su figura (por ejemplo r2).'); return; }
   if (P.pending){
     const pn = P.pending, d = {up:1, down:-1, oup:12, odown:-12}[a];
@@ -2448,6 +2469,35 @@ function editAction(a){
     afterEdit(); return;
   }
 }
+/* Letra en la edición directa: T abre la sílaba de la nota elegida; espacio o guion pasan a la siguiente */
+const lyrIn = $('#lyrIn');
+function startLyric(){
+  if (P.pending) P.pending = null;
+  if (!P.sel){ toast('Primero elegí una nota.'); return; }
+  $('#lyrEdit').hidden = false;
+  lyrIn.value = P.sel.syl || '';
+  lyrIn.focus(); lyrIn.select();
+}
+function stopLyric(){ $('#lyrEdit').hidden = true; lyrIn.blur(); }
+function commitLyric(syl){
+  syl = syl.replace(/\s+/g, ' ').trim().replace(/\//g, '');
+  if (!P.sel || (P.sel.syl || '') === syl) return;
+  pushUndo(); P.sel.syl = syl; afterEdit();
+}
+function lyricNext(){
+  const v = curVoice(), i = v.ev.indexOf(P.sel), nx = v.ev[i + 1];
+  if (!nx){ stopLyric(); toast('Era la última nota.'); return; }
+  P.sel = nx; ensureVisible(); updateEditBar(); draw();
+  lyrIn.value = nx.syl || ''; lyrIn.select();
+}
+lyrIn.addEventListener('keydown', e => {
+  if (e.key === ' ' || e.key === 'Tab'){ e.preventDefault(); commitLyric(lyrIn.value); lyricNext(); }
+  else if (e.key === '-'){ e.preventDefault(); commitLyric(lyrIn.value.replace(/-+$/, '') + '-'); lyricNext(); }
+  else if (e.key === 'Enter'){ e.preventDefault(); commitLyric(lyrIn.value); stopLyric(); }
+  else if (e.key === 'Escape'){ e.preventDefault(); stopLyric(); }
+});
+$('#lyrNext').addEventListener('click', () => { commitLyric(lyrIn.value); lyricNext(); lyrIn.focus(); });
+$('#lyrDone').addEventListener('click', () => { commitLyric(lyrIn.value); stopLyric(); });
 $('#editBar').addEventListener('click', e => {
   const b = e.target.closest('[data-e],[data-d]'); if (!b) return;
   if (b.dataset.e) editAction(b.dataset.e);
@@ -2482,6 +2532,7 @@ window.addEventListener('keydown', e => {
   }
   const c = k.length === 1 ? k.toLowerCase() : '';
   if (!c) return;
+  if (!keyBuf && c === 't'){ e.preventDefault(); startLyric(); return; }
   if (!keyBuf && c === 'w'){ e.preventDefault(); editAction(e.shiftKey ? 'pause' : 'breath'); return; }
   if (!keyBuf && (c === 'q' || c === 'e')){
     e.preventDefault(); P.viewB = Math.max(P.st[P.from - 1] - 1, Math.min(P.st[P.to], (P.viewB ?? G.nowB) + (c === 'q' ? -2 : 2))); lyrKey = ''; draw(); return;
@@ -2662,7 +2713,7 @@ const tempo = $('#tempo');
 function syncTempo(){ tempo.value = P.song.tempo || 80; $('#tempoOut').textContent = (P.song.tempo || 80) + ' pulsos por minuto'; }
 tempo.addEventListener('input', e => { P.song.tempo = +e.target.value; syncTempo(); save(); });
 $('#loop').addEventListener('change', e => { P.loop = e.target.checked; });
-$('#editMode').addEventListener('change', e => { P.edit = e.target.checked; P.sel = null; P.addAt = null; P.pending = null; updateEditBar(); draw(); });
+$('#editMode').addEventListener('change', e => { P.edit = e.target.checked; P.sel = null; P.addAt = null; P.pending = null; stopLyric(); updateEditBar(); draw(); });
 $('#timbre').value = useVowels() ? 'vocal' : 'tono';
 $('#timbre').addEventListener('change', e => { try { localStorage.setItem('pt.timbre', e.target.value); } catch(err){} });
 $('#phones').checked = usingPhones();
