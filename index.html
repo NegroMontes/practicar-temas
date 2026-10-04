@@ -219,6 +219,11 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
 .two .small[aria-pressed="true"]{background:var(--violet);border-color:var(--violet);color:var(--on-violet)}
 .lyric{font:500 24px/1.3 "EB Garamond",Georgia,serif;text-align:center;margin:10px 0 0;min-height:32px;color:var(--soft)}
 .lyric mark{background:none;color:var(--ink);font-weight:500;border-bottom:3px solid var(--violet)}
+.level{grid-column:1/-1;display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center;margin-top:2px}
+.lvltrack{height:8px;border-radius:4px;background:var(--grid);overflow:hidden}
+.lvlbar{height:100%;width:0;background:var(--soft);transition:width .06s linear}
+.lvlbar.mid{background:var(--warn)}.lvlbar.on{background:var(--ok)}
+#vzLvlBox{margin:6px 0 10px}
 .prueba{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .sexbtns{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
 .sexbtns .small[aria-pressed="true"]{background:var(--violet);border-color:var(--violet);color:var(--on-violet)}
@@ -278,6 +283,7 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
         <div class="cell"><span class="lab">Tu voz</span><span class="big" id="sungNote">–</span></div>
         <div class="cell"><span class="lab">Nota a cantar</span><span class="big" id="targetNote">–</span></div>
         <div class="gauge" aria-hidden="true"><div class="zone"></div><div class="mid"></div><div class="dot" id="dot"></div><span class="gl">bajo</span><span class="gr">alto</span></div>
+        <div class="level" id="lvlBox" hidden><span class="lab">Micrófono</span><div class="lvltrack"><div class="lvlbar" id="lvl"></div></div></div>
         <p class="verdict" id="verdict">Tocá Escuchar o Cantar para empezar.</p>
       </section>
       <div class="actions">
@@ -385,6 +391,7 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
           </div>
         </div>
       </div>
+      <div class="level" id="vzLvlBox" hidden><span class="lab">Micrófono</span><div class="lvltrack"><div class="lvlbar" id="vzLvl"></div></div></div>
       <div class="wuprog" id="vzProgBox" hidden><div class="wubar" id="vzProg"></div></div>
       <div class="strip" id="vzStrip"></div>
       <div class="actions">
@@ -411,7 +418,7 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '3.3', APP_FECHA = '2026-10-04';
+const APP_VERSION = '3.4', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -1629,7 +1636,7 @@ async function micStart(){
   // En iPhone, el modo «solo reproducir» (para que suene aunque esté en silencio) no deja grabar
   setAudioSession('play-and-record');
   try {
-    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}});
+    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:false, autoGainControl:true}});
   } catch(e){
     if (e.name !== 'OverconstrainedError' && e.name !== 'TypeError'){ setAudioSession('playback'); throw e; }
     stream = await navigator.mediaDevices.getUserMedia({audio:true});   // algunos teléfonos no aceptan las opciones
@@ -1660,11 +1667,21 @@ function secureLink(){
   const u = INFO.https + location.hash;
   return `<a href="${esc(u)}">Abrir la versión segura para usar el micrófono</a>`;
 }
+let micLevel = 0, micVoiced = false;   // para la barra de nivel
+const MIC_GATE = .004;
+const NO_OIGO = 'No te estoy escuchando bien. Mirá la barra «Micrófono»: si casi no se mueve, cantá más fuerte o acercá el teléfono (a un palmo de la boca, con el micrófono de abajo hacia vos). Si se mueve pero no marca tu nota, usá auriculares: así el micrófono no escucha las otras voces.';
+function showLevel(id){
+  const bar = document.getElementById(id); if (!bar) return;
+  const db = micLevel > 0 ? 20 * Math.log10(micLevel) : -100;
+  bar.style.width = Math.max(0, Math.min(100, (db + 60) / 50 * 100)) + '%';
+  bar.className = 'lvlbar' + (micVoiced ? ' on' : micLevel >= MIC_GATE ? ' mid' : '');
+}
 function detect(){
   analyser.getFloatTimeDomainData(tbuf);
   const N = tbuf.length, half = N >> 1; let s = 0;
   for (let i = 0; i < N; i++) s += tbuf[i] * tbuf[i];
-  if (Math.sqrt(s / N) < .012) return null;
+  micLevel = Math.sqrt(s / N); micVoiced = false;
+  if (micLevel < MIC_GATE) return null;
   const sr = ac.sampleRate, tauMin = Math.max(2, Math.floor(sr / 1400)), tauMax = Math.min(half - 1, Math.floor(sr / 60));
   for (let tau = 1; tau <= tauMax; tau++){
     let d2 = 0;
@@ -1675,7 +1692,7 @@ function detect(){
   for (let tau = 1; tau <= tauMax; tau++){ run += yin[tau]; yin[tau] = run ? yin[tau] * tau / run : 1; }
   let te = -1;
   for (let t = tauMin; t < tauMax; t++){
-    if (yin[t] < .12){ while (t + 1 < tauMax && yin[t + 1] < yin[t]) t++; te = t; break; }
+    if (yin[t] < .16){ while (t + 1 < tauMax && yin[t + 1] < yin[t]) t++; te = t; break; }
   }
   if (te < 0) return null;
   let better = te;
@@ -1684,7 +1701,8 @@ function detect(){
     if (den !== 0) better = te + (s2 - s0) / den;
   }
   const f = sr / better;
-  return (f >= 60 && f <= 1400) ? f : null;
+  micVoiced = f >= 60 && f <= 1400;
+  return micVoiced ? f : null;
 }
 
 /* ---------- Reproducción ---------- */
@@ -1718,6 +1736,7 @@ async function start(mode){
   for (let i = 0; i < count; i++) click(t0 + i * spb, i === 0, run.nodes);
   schedulePass(0);
   setBusy(true);
+  $('#lvlBox').hidden = mode !== 'sing';
   $('#results').hidden = true; P.status = P.scores = P.summary = null;
   run.raf = requestAnimationFrame(tick);
 }
@@ -1746,6 +1765,9 @@ function tick(){
 }
 function frame(now){
   const f = detect();
+  showLevel('lvl');
+  if (f) run.heard = true;
+  if (!run.heard && run.nowRel > 6 && !run.hinted){ run.hinted = true; setMsg(NO_OIGO); }
   let fresh = false;
   if (f){ run.hist.push(69 + 12 * Math.log2(f / 440)); if (run.hist.length > 3) run.hist.shift(); run.lastVoiced = now; fresh = true; }
   else if (now - run.lastVoiced > 160) run.hist.length = 0;
@@ -1796,6 +1818,7 @@ function stop(natural){
   r.nodes.forEach(o => { try { o.stop(); } catch(e){} });
   run = null;
   micStop(); applyGains(false);
+  $('#lvlBox').hidden = true;
   setBusy(false); resetMeter(); draw();
 }
 
@@ -2388,7 +2411,8 @@ async function vzStart(){
   try { await micStart(); }
   catch(e){ vzMsg(micErrorText(e), true); if (secureLink()) $('#vzMsg').innerHTML += '<br>' + secureLink(); return; }
   vzMsg('');
-  VZ.on = true; VZ.win = []; VZ.samples = []; VZ.t0 = performance.now();
+  VZ.on = true; VZ.win = []; VZ.samples = []; VZ.t0 = performance.now(); VZ.heard = VZ.hinted = false;
+  $('#vzLvlBox').hidden = false;
   if (VZ.step === 'habla') VZ.f0 = null;
   if (VZ.step === 'color') VZ.vtl = null;
   vzRender();
@@ -2397,6 +2421,7 @@ async function vzStart(){
 function vzStop(){
   if (!VZ.on) return;
   VZ.on = false; cancelAnimationFrame(VZ.raf); micStop(); VZ.live = null;
+  $('#vzLvlBox').hidden = true;
   if (curView === 'voz') vzRender();
 }
 function finishHabla(){
@@ -2417,7 +2442,9 @@ function vzTick(now){
   if (now - VZ.lastFrame >= 30 && analyser){
     VZ.lastFrame = now;
     const f = detect();
-    if (f){ VZ.win.push({t:now, m:hzToMidi(f)}); VZ.lastVoiced = now; }
+    showLevel('vzLvl');
+    if (f){ VZ.win.push({t:now, m:hzToMidi(f)}); VZ.lastVoiced = now; VZ.heard = true; }
+    else if (!VZ.heard && now - VZ.t0 > 5000 && !VZ.hinted){ VZ.hinted = true; vzMsg(NO_OIGO); }
     else if (now - VZ.lastVoiced > 200) VZ.win.length = 0;
     VZ.win = VZ.win.filter(p => now - p.t <= 450);
     const voiced = VZ.win.length && now - VZ.lastVoiced <= 200;
