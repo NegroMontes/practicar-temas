@@ -333,7 +333,7 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
 
     <section class="panel">
       <h2>Partituras</h2>
-      <p class="hint" style="margin-top:0">PDF o fotos para leer mientras practicás. Archivos de MuseScore (.mscz), MusicXML o MIDI para cargar las voces.</p>
+      <p class="hint" style="margin-top:0" id="eFilesHint"></p>
       <div id="eFiles"></div>
       <div class="filebtns">
         <button class="small" id="eUpload" type="button">Subir partitura</button>
@@ -411,7 +411,7 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '3.1', APP_FECHA = '2026-10-04';
+const APP_VERSION = '3.2', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -722,7 +722,7 @@ function parseMusicXML(text, fname){
           const ev = voices.get(key), b = rnd(mStart + start), prev = ev[ev.length - 1];
           const lyr = kids(el, 'lyric'), l1 = lyr.find(l => (l.getAttribute('number') || '1') === '1') || lyr[0];
           const sb = l1 ? txt(l1, 'syllabic') : null;
-          const syl = l1 ? kids(l1, 'text').map(c => c.textContent).join('').trim() + (sb === 'begin' || sb === 'middle' ? '-' : '') : '';
+          const syl = l1 ? [...l1.children].map(c => c.nodeName === 'text' ? c.textContent : c.nodeName === 'elision' ? '‿' : '').join('').trim() + (sb === 'begin' || sb === 'middle' ? '-' : '') : '';
           const tieStop = kids(el, 'tie').some(t => t.getAttribute('type') === 'stop');
           if (tieStop && prev && prev.midi === midi && Math.abs(prev.beat + prev.dur - b) < 1e-3) prev.dur = rnd(prev.dur + dur);
           else ev.push({beat:b, dur:rnd(dur), midi, syl});
@@ -811,8 +811,104 @@ function parseMidi(buf, fname){
   tempos.sort((a, b) => a.tick - b.tick);
   return {title:fname.replace(/\.[^.]+$/, ''), composer:'', mlen, mlab:null, fifths, tempo:tempos.length ? Math.round(60e6 / tempos[0].us) : null, cands};
 }
+/* Archivos de MuseScore (.mscz / .mscx) leídos en el navegador, sin MuseScore instalado.
+   La altura (<pitch>) ya es la que suena; las duraciones vienen como figura + puntillos (+ tresillos). */
+async function msczToMscx(buf){
+  const z = await unzip(buf);
+  let root = null;
+  if (z.names.includes('META-INF/container.xml')){
+    const c = new DOMParser().parseFromString(await z.read('META-INF/container.xml'), 'application/xml');
+    root = [...c.querySelectorAll('rootfile')].map(r => r.getAttribute('full-path')).find(p => /\.mscx$/i.test(p) && !/^Excerpts\//.test(p));
+  }
+  if (!root || !z.names.includes(root)) root = z.names.find(n => /\.mscx$/i.test(n) && !n.startsWith('Excerpts/'));
+  if (!root) throw new Error('No encontré la partitura dentro del archivo de MuseScore.');
+  return z.read(root);
+}
+function lyricText(el){   // texto de una sílaba de MuseScore: la sinalefa viene como símbolo
+  if (!el) return '';
+  let t = '';
+  el.childNodes.forEach(n => { t += n.nodeType === 3 ? n.nodeValue : n.nodeName === 'sym' ? (/Elision/.test(n.textContent) ? '‿' : '') : n.textContent; });
+  return t.trim();
+}
+const MS_DUR = {long:16, breve:8, whole:4, half:2, quarter:1, eighth:.5, '16th':.25, '32nd':.125, '64th':.0625, '128th':.03125};
+const MS_GRACE = ['acciaccatura','appoggiatura','grace4','grace16','grace32','grace8after','grace16after','grace32after'];
+function parseMscx(text, fname){
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (doc.querySelector('parsererror')) throw new Error('El archivo de MuseScore está dañado.');
+  const score = doc.querySelector('museScore > Score');
+  if (!score) throw new Error('No reconozco este archivo de MuseScore (puede ser de una versión muy vieja: abrilo y guardalo de nuevo en MuseScore).');
+  const kid = (el, n) => { if (el) for (const c of el.children) if (c.nodeName === n) return c; return null; };
+  const kids = (el, n) => el ? [...el.children].filter(c => c.nodeName === n) : [];
+  const txt = (el, n) => { const c = kid(el, n); return c ? c.textContent.trim() : null; };
+  const frac = f => { const [a, b] = String(f).split('/').map(Number); return b ? a / b * 4 : 0; };   // fracción de redonda → negras
+  const meta = n => { const m = kids(score, 'metaTag').find(m => m.getAttribute('name') === n); return m ? m.textContent.trim() : ''; };
+  const boxText = st => { for (const t of score.querySelectorAll('VBox > Text')) if (txt(t, 'style') === st) return (kid(t, 'text') || t).textContent.trim(); return ''; };
+  const title = boxText('title') || meta('workTitle') || fname.replace(/\.[^.]+$/, '');
+  const composer = boxText('composer') || meta('composer');
+  const staffName = {};
+  let staffN = 0;
+  kids(score, 'Part').forEach((p, pi) => {
+    const name = txt(kid(p, 'Instrument'), 'longName') || txt(p, 'trackName') || `Parte ${pi + 1}`, sts = kids(p, 'Staff');
+    sts.forEach((st, si) => { staffN++; staffName[st.getAttribute('id') || String(staffN)] = sts.length > 1 ? `${name} ${si + 1}` : name; });
+  });
+  let mlen = null, mlab = null, fifths = null, tempo = null;
+  const cands = [];
+  kids(score, 'Staff').forEach(staff => {
+    const sname = staffName[staff.getAttribute('id')] || `Pentagrama ${staff.getAttribute('id')}`;
+    let timeLen = 4, mStart = 0, num = 0;
+    const lens = [], labs = [], voices = new Map();
+    for (const meas of kids(staff, 'Measure')){
+      kids(meas, 'voice').forEach((vEl, vi) => {
+        let cur = 0; const tf = [1];   // pila de proporciones de tresillos
+        if (!voices.has(vi)) voices.set(vi, []);
+        const ev = voices.get(vi);
+        for (const el of vEl.children){
+          const nn = el.nodeName;
+          if (nn === 'KeySig'){ const k = txt(el, 'concertKey') ?? txt(el, 'accidental'); if (k != null && fifths == null) fifths = +k; }
+          else if (nn === 'TimeSig'){ const a = +txt(el, 'sigN'), b = +txt(el, 'sigD'); if (a && b) timeLen = a * 4 / b; }
+          else if (nn === 'Tempo'){ const t = +txt(el, 'tempo'); if (t && tempo == null) tempo = Math.round(t * 60); }
+          else if (nn === 'location') cur += frac(txt(el, 'fractions') || '0');
+          else if (nn === 'Tuplet'){ const a = +txt(el, 'normalNotes'), b = +txt(el, 'actualNotes'); tf.push(tf[tf.length - 1] * (a && b ? a / b : 1)); }
+          else if (nn === 'endTuplet'){ if (tf.length > 1) tf.pop(); }
+          else if (nn === 'Rest' || nn === 'Chord'){
+            if (nn === 'Chord' && MS_GRACE.some(g => kid(el, g))) continue;   // notas de adorno: no ocupan tiempo
+            const dt = txt(el, 'durationType');
+            let d = dt === 'measure' ? frac(txt(el, 'duration') || '0') : (MS_DUR[dt] || 0);
+            const dots = +(txt(el, 'dots') || 0); if (dots && dt !== 'measure') d *= 2 - Math.pow(.5, dots);
+            d *= tf[tf.length - 1];
+            const note = nn === 'Chord' && kid(el, 'Note');   // de un acorde nos quedamos con la primera nota
+            if (note){
+              const midi = +txt(note, 'pitch'), b = rnd(mStart + cur), prev = ev[ev.length - 1];
+              const lyr = kids(el, 'Lyrics'), l1 = lyr.find(l => !txt(l, 'no') || txt(l, 'no') === '0') || lyr[0];
+              const sb = l1 ? txt(l1, 'syllabic') : null;
+              const syl = l1 ? lyricText(kid(l1, 'text')) + (sb === 'begin' || sb === 'middle' ? '-' : '') : '';
+              const tieNext = kids(note, 'Spanner').some(sp => sp.getAttribute('type') === 'Tie' && kid(sp, 'next')) || !!kid(note, 'Tie');
+              if (prev && prev.tie && prev.midi === midi && Math.abs(prev.beat + prev.dur - b) < 1e-3){ prev.dur = rnd(prev.dur + d); prev.tie = tieNext; }
+              else ev.push({beat:b, dur:rnd(d), midi, syl, tie:tieNext});
+            }
+            cur += d;
+          }
+        }
+      });
+      const L = meas.getAttribute('len') ? frac(meas.getAttribute('len')) : timeLen;
+      lens.push(rnd(L));
+      labs.push(txt(meas, 'irregular') === '1' ? (num ? num + '+' : '0') : String(++num));
+      mStart += L;
+    }
+    if (!mlen){ mlen = lens; mlab = labs; }
+    const keys = [...voices.keys()].filter(k => voices.get(k).length).sort((a, b) => a - b);
+    keys.forEach((k, i) => cands.push({name:keys.length > 1 ? (splitName(sname, i, keys.length) || `${sname} · ${i + 1}`) : sname,
+      ev:voices.get(k).map(({tie, ...e}) => e), shift:0}));
+  });
+  if (!cands.length) throw new Error('No encontré notas en el archivo de MuseScore.');
+  const ml = mlab && mlab.every((l, i) => l === String(i + 1)) ? null : mlab;
+  return {title, composer, mlen, mlab:ml, fifths, tempo, cands};
+}
+async function readMuseScoreFile(blob, name){
+  const buf = await blob.arrayBuffer(), u8 = new Uint8Array(buf);
+  return parseMscx(u8[0] === 0x50 && u8[1] === 0x4B ? await msczToMscx(buf) : new TextDecoder('utf-8').decode(buf), name);
+}
 async function convertMuseScore(body){
-  if (Store.mode !== 'server') throw new Error('Para leer archivos de MuseScore abrí la herramienta con «Abrir Practicar temas.bat». También podés exportar MusicXML desde MuseScore (Archivo › Exportar).');
   const r = await fetch('api/convertir', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || 'No se pudo convertir el archivo de MuseScore.');
@@ -821,6 +917,7 @@ async function convertMuseScore(body){
 async function readScore(blob, name, ref){
   const t = ftype(name);
   if (t === 'mscz'){
+    if (Store.mode !== 'server' || !ref) return readMuseScoreFile(blob, name);   // sin la computadora: se lee en el navegador
     const j = await convertMuseScore({origen:'archivo', ruta:ref});
     return parseMusicXML(j.xml, name);
   }
@@ -924,7 +1021,8 @@ async function handleUpload(files, song, folder){
         busyDlg(t === 'mscz' ? `Abriendo «${file.name}» con MuseScore…` : `Leyendo «${file.name}»…`);
         let parsed;
         const fl = [entry];
-        if (t === 'mscz'){
+        if (t === 'mscz' && Store.mode !== 'server') parsed = await readMuseScoreFile(file, file.name);
+        else if (t === 'mscz'){
           const j = await convertMuseScore({origen:'archivo', ruta:ref, pdf:true});
           parsed = parseMusicXML(j.xml, file.name);
           if (j.pdf) fl.push({id:uid(), name:file.name.replace(/\.[^.]+$/, '') + '.pdf', ref:j.pdf, type:'pdf'});
@@ -953,7 +1051,7 @@ async function museScoreDialog(song, folder){
   busyDlg('Buscando tus partituras de MuseScore…');
   let j;
   try {
-    if (Store.mode !== 'server') throw new Error('Para traer partituras de MuseScore abrí la herramienta con «Abrir Practicar temas.bat».');
+    if (Store.mode !== 'server') throw new Error('Esta opción busca en la carpeta de MuseScore de la computadora donde está instalada la herramienta. Acá podés subir tus archivos de MuseScore con «Subir partitura».');
     j = await (await fetch('api/musescore')).json();
     if (!j.disponible) throw new Error('No encontré MuseScore 4 instalado en esta computadora.');
     if (!j.archivos.length) throw new Error('No encontré partituras en Documentos › MuseScore4 › Scores.');
@@ -1242,6 +1340,9 @@ function renderEdit(){
   $('#eTitle').value = s.title; $('#eSub').value = s.sub || ''; $('#eNotes').value = s.notes || '';
   $('#eFolder').innerHTML = folderOptions(s.folder);
   $('#eFromMs').hidden = Store.mode !== 'server';
+  $('#eFilesHint').textContent = INFO.omr
+    ? 'Archivos de MuseScore (.mscz), MusicXML o MIDI cargan las voces. Los PDF y fotos se pueden leer mientras practicás y convertir a notas con «A notas».'
+    : 'Archivos de MuseScore (.mscz), MusicXML o MIDI cargan las voces. Los PDF y fotos quedan para leer mientras practicás: para convertirlos en notas, pedile a quien dirige el coro que lo haga y te comparta el tema.';
   $('#eFiles').innerHTML = s.files.length ? s.files.map(f => `<div class="erow" data-f="${f.id}">
       <span class="ftype">${TYPE_LABEL[f.type] || 'Archivo'}</span><span class="grow"><span class="fname">${esc(f.name)}</span></span>
       <button class="small" type="button" data-act="ver">Ver</button>
@@ -1289,7 +1390,7 @@ async function voicesFromImage(s, f){
 async function voicesFromFile(s, f){
   busyDlg(`Leyendo «${f.name}»…`);
   try {
-    const parsed = await readScore(f.ref.startsWith('archivos/') && f.type === 'mscz' ? null : await Store.getBlob(f.ref), f.name, f.ref);
+    const parsed = await readScore(f.ref.startsWith('archivos/') && f.type === 'mscz' && Store.mode === 'server' ? null : await Store.getBlob(f.ref), f.name, f.ref);
     importDialog(parsed, {song:s, fileName:f.name, after:() => renderEdit()});
   } catch(err){ errDlg(err); }
 }
@@ -2400,6 +2501,8 @@ $('#vzTypes').addEventListener('click', e => {
   S.songs.forEach(s => delete s.myVoice);
   save(); renderVoz(); toast(`Listo: tu voz es ${refById(b.dataset.t).name}.`);
 });
+
+if (/[?&]prueba\b/.test(location.search)) window.PT = {parseMscx, parseMusicXML, msczToMscx, readMuseScoreFile};   // solo para probar
 
 /* ---------- Inicio ---------- */
 (async () => {
