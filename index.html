@@ -252,6 +252,7 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
 .keyspanel dt{white-space:nowrap;color:var(--soft)}
 .keyspanel dd{margin:0}
 kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;background:var(--stage);font:700 12px/18px "Atkinson Hyperlegible",system-ui,sans-serif;text-align:center;color:var(--ink)}
+.ebtns .small.confirm{border-color:var(--warn);color:var(--warn)}
 .prueba{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .sexbtns{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
 .sexbtns .small[aria-pressed="true"]{background:var(--violet);border-color:var(--violet);color:var(--on-violet)}
@@ -325,6 +326,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
           <button class="small" type="button" data-e="pause" title="Respiración con duración para todas las voces (Mayús+W)">ʼ Pausa para todos</button>
           <button class="small danger" type="button" data-e="del" title="Borrar la nota (Supr)">Borrar</button>
           <button class="small" type="button" data-e="undo" title="Deshacer (Ctrl+Z)">Deshacer</button>
+          <button class="small confirm" type="button" data-e="confirm" title="Confirmar la nota (Enter)">✓ Confirmar</button>
         </div>
         <div class="ebtns"><span class="hint" style="margin:0">Figura:</span>
           <button class="small" type="button" data-d="1" title="1">𝅝 redonda</button><button class="small" type="button" data-d="2" title="2">𝅗𝅥 blanca</button>
@@ -332,7 +334,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
           <button class="small" type="button" data-d="5" title="5">𝅘𝅥𝅯 semicorchea</button><button class="small" type="button" data-d="dot" title=".">· puntillo</button>
         </div>
         <details class="keys"><summary class="hint" style="margin:0">Atajos de teclado</summary>
-          <p class="hint">Tocá una nota para elegirla (arrastrala arriba o abajo para cambiar la altura). Tocá un lugar vacío para agregar notas ahí. <b>← →</b> nota anterior / siguiente · <b>↑ ↓</b> medio tono (con Mayús, una octava) · <b>Q / E</b> mover el visor a la izquierda / derecha · nota + figura: <b>d r m f s l si</b> (do re mi fa sol la si; <b>+</b> sostenido, <b>-</b> bemol) seguidas de <b>1</b> redonda, <b>2</b> blanca, <b>3</b> negra, <b>4</b> corchea, <b>5</b> semicorchea (ej.: <b>d1</b> do redonda, <b>r2</b> re blanca, <b>f+3</b> fa sostenido negra) · un número solo cambia la figura · <b>.</b> puntillo · <b>W</b> respiración · <b>Mayús+W</b> respiración con pausa para todas las voces · <b>Supr</b> borrar · <b>Ctrl+Z</b> deshacer · <b>Esc</b> soltar la nota.</p></details>
+          <p class="hint">Tocá una nota para elegirla (arrastrala arriba o abajo para cambiar la altura). Tocá un lugar vacío para agregar notas ahí. <b>← →</b> nota anterior / siguiente · <b>↑ ↓</b> medio tono (con Mayús, una octava) · <b>Q / E</b> mover el visor a la izquierda / derecha · nota + figura: <b>d r m f s l si</b> (do re mi fa sol la si; <b>+</b> sostenido, <b>-</b> bemol) seguidas de <b>1</b> redonda, <b>2</b> blanca, <b>3</b> negra, <b>4</b> corchea, <b>5</b> semicorchea (ej.: <b>d1</b> do redonda, <b>r2</b> re blanca, <b>f+3</b> fa sostenido negra) · un número solo cambia la figura · <b>.</b> puntillo · <b>Enter</b> confirma la nota (antes se ve punteada y suena) · <b>Esc</b> la descarta · <b>W</b> respiración · <b>Mayús+W</b> respiración con pausa para todas las voces · <b>Supr</b> borrar · <b>Ctrl+Z</b> deshacer · <b>Esc</b> soltar la nota.</p></details>
       </div>
       <section class="meter" aria-label="Afinación">
         <div class="cell"><span class="lab">Tu voz</span><span class="big" id="sungNote">–</span></div>
@@ -507,6 +509,8 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
     <dt>ejemplos</dt><dd><kbd>d1</kbd> do redonda · <kbd>r2</kbd> re blanca · <kbd>f+3</kbd> fa♯ negra</dd>
     <dt>número solo</dt><dd>cambia la figura de la nota elegida</dd>
     <dt><kbd>.</kbd></dt><dd>puntillo</dd>
+    <dt><kbd>Enter</kbd></dt><dd>confirmar la nota (antes se ve punteada y suena)</dd>
+    <dt><kbd>Esc</kbd></dt><dd>descartar la vista previa</dd>
   </dl>
   <h3>Respiraciones</h3>
   <dl>
@@ -518,7 +522,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '4.1', APP_FECHA = '2026-10-04';
+const APP_VERSION = '4.2', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -1654,7 +1658,7 @@ function buildVoiceSel(){
   $('#voiceWhy').textContent = P.voiceWhy || '';
 }
 function chooseVoice(id){
-  P.sel = null; P.addAt = null; P.undo = [];
+  P.sel = null; P.addAt = null; P.undo = []; P.pending = null;
   P.voice = id; P.song.myVoice = id; P.voiceWhy = 'elegida por vos en este tema'; save();
   P.song.voices.forEach(v => P.vol[v.id] = v.id === P.voice ? .9 : .35); P.mute = {}; P.solo = {};
   buildVoiceSel(); syncMixer(); refreshEvs(); resetMeter(); draw();
@@ -1682,7 +1686,7 @@ function openSong(s){
   $('#songEmpty').hidden = !!has; $('#songBody').hidden = !has;
   renderSongFiles(s);
   if (!has) return;
-  P.sel = null; P.addAt = null; P.undo = []; $('#editMode').checked = P.edit; updateEditBar();
+  P.sel = null; P.addAt = null; P.undo = []; P.pending = null; $('#editMode').checked = P.edit; updateEditBar();
   buildSeg(); setSecRange(); buildRangeOptions(); buildMixer(); buildVoiceSel(); syncTempo();
   $('#loop').checked = P.loop; $('#singGuide').checked = P.singGuide;
   setMsg(window.isSecureContext ? 'Con auriculares, el micrófono capta mejor tu voz y no las otras voces.' : micErrorText());
@@ -2171,7 +2175,8 @@ function draw(){
   ctx.clearRect(0, 0, w, h);
   updateLyric(run ? run.local : P.st[P.from - 1]);
   ctx.fillStyle = C.stage; ctx.fillRect(0, 0, w, h);
-  const lo = P.range.lo - 1, hi = P.range.hi + 1;
+  const pnM = P.edit && P.pending ? P.pending.midi : null;
+  const lo = Math.min(P.range.lo, pnM ?? 999) - 1, hi = Math.max(P.range.hi, pnM ?? 0) + 1;
   const top = 24, bot = 28, gutter = 34, rows = hi - lo + 1, rowH = (h - top - bot) / rows;
   const yC = m => top + (hi - m) * rowH + rowH / 2;
   const view = w - gutter, ppb = view / 6.2, phX = gutter + view * .2;
@@ -2244,6 +2249,12 @@ function draw(){
   P.breaths.forEach(b => { const x = xOf(b); if (x >= gutter && x <= w) mark(x, C.violet, P.breathsAuto.some(a => near(a, b)) ? .55 : 1, P.breathsAuto.some(a => near(a, b)) ? 'auto' : ''); });
   P.pauses.forEach(q => { const x = xOf(q.beat); if (x >= gutter && x <= w) mark(x, C.warn, 1, '+' + fmtDur(q.dur)); });
   // edición directa: nota elegida y lugar donde se agrega
+  if (P.edit && !run && P.pending){
+    const pn = P.pending, x1 = xOf(pn.at), x2 = xOf(pn.at + pn.dur), y = yC(pn.midi), bh = Math.min(Math.max(rowH * .78, 12), 18);
+    ctx.fillStyle = C.warn; ctx.globalAlpha = .13; ctx.fillRect(x1, top - 6, Math.max(x2 - x1, 3), h - top - bot + 12); ctx.globalAlpha = 1;   // lo que se reemplaza
+    ctx.strokeStyle = C.warn; ctx.lineWidth = 2.5; ctx.setLineDash([5, 4]); rr(x1 + 1, y - bh / 2, Math.max(x2 - x1 - 2, 5), bh, 5); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = C.warn; ctx.font = '700 11px "Atkinson Hyperlegible", system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.fillText(nameOf(pn.midi) + '?', x1 + 6, y + .5);
+  }
   if (P.edit && !run){
     if (P.addAt != null){ const x = xOf(P.addAt); ctx.strokeStyle = C.warn; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x, top - 6); ctx.lineTo(x, h - bot + 6); ctx.stroke(); }
   }
@@ -2276,6 +2287,7 @@ function hitNote(pt){
 cv.addEventListener('pointerdown', e => {
   if (run || !P.song) return;
   if (P.edit){
+    P.pending = null;
     const hit = hitNote(canvasPoint(e));
     if (hit){ P.sel = hit; P.addAt = null; drag = {mode:'pitch', y:e.clientY, base:hit.midi, steps:0, moved:false}; updateEditBar(); draw(); previewNote(hit); return; }
   }
@@ -2325,7 +2337,7 @@ function afterEdit(doSave = true){
   ensureVisible(); updateEditBar(); draw();
 }
 function ensureVisible(){
-  const b = P.sel ? P.sel.beat : P.addAt; if (b == null || !G.ppb) return;
+  const b = P.pending ? P.pending.at : P.sel ? P.sel.beat : P.addAt; if (b == null || !G.ppb) return;
   const vis = (G.view || 300) / G.ppb, left = (P.viewB ?? 0) - .2 * vis + .5, right = (P.viewB ?? 0) + .78 * vis;
   if (b < left || b > right) P.viewB = Math.max(P.st[P.from - 1] - 1, b - 1);
 }
@@ -2341,7 +2353,9 @@ function updateEditBar(){
   if (!P.edit) return;
   const v = curVoice();
   const durTxt = d => DUR_NAME[d] || fmtDur(d) + ' tiempos';
-  $('#editWhat').innerHTML = !v ? '' : P.sel
+  $('#editWhat').innerHTML = !v ? '' : P.pending
+    ? `Vista previa: <b>${fullName(P.pending.midi)}</b>, ${durTxt(P.pending.dur)}, compás ${measureLabel(P.song, measureIdx(P.pending.at))}. <b>Enter</b> para confirmar, <b>Esc</b> para descartar (↑ ↓ o un número la cambian).`
+    : P.sel
     ? `Editando <b>${esc(v.name)}</b> · nota elegida: <b>${fullName(P.sel.midi)}</b>, ${durTxt(P.sel.dur)}${P.sel.syl ? ` («${esc(P.sel.syl.replace(/-$/, ''))}»)` : ''}, compás ${measureLabel(P.song, measureIdx(P.sel.beat))}`
     : P.addAt != null ? `Editando <b>${esc(v.name)}</b> · las notas que escribas se agregan en el compás ${measureLabel(P.song, measureIdx(P.addAt))} (línea naranja)`
     : `Editando <b>${esc(v.name)}</b> · tocá una nota para elegirla, o un lugar vacío para agregar notas.`;
@@ -2357,7 +2371,7 @@ function writeNote(start, dur, midi){
     if (ee <= start + 1e-6 || es >= end - 1e-6){ out.push(e); return; }
     if (Math.abs(es - start) < 1e-6) syl = e.syl || '';
     if (es < start - 1e-6) out.push({...e, dur:rnd(start - es)});
-    if (ee > end + 1e-6) out.push({...e, beat:end, dur:rnd(ee - end), syl:''});
+    // lo que sobraba después de la nota nueva queda como silencio (como en MuseScore)
   });
   const n = {beat:rnd(start), dur:rnd(dur), midi, syl};
   out.push(n); out.sort((a, b) => a.beat - b.beat); v.ev = out;
@@ -2371,19 +2385,37 @@ function refPitch(at){
 }
 function enterNote(pc, alt, n){
   const dur = DUR_BY_N[n]; if (!dur) return;
+  if (P.pending && pc == null){ setPending({...P.pending, dur}); return; }   // número solo: cambia la figura de la vista previa
   const at = P.addAt != null ? P.addAt : P.sel ? P.sel.beat : null; if (at == null){ toast('Primero tocá una nota o un lugar vacío.'); return; }
   let midi = null;
   if (pc != null){ const ref = refPitch(at), base = pc + alt; midi = ref + ((((base - ref) % 12) + 18) % 12) - 6; }
   else midi = P.sel ? P.sel.midi : refPitch(at);
+  setPending({at, dur, midi, adding:P.addAt != null});
+}
+/* Nota en vista previa: se ve punteada en su lugar (con lo que va a reemplazar) y suena; Enter la confirma */
+function setPending(pn){
+  P.pending = pn;
+  if (pn) previewNote({midi:pn.midi, syl:P.sel && near(P.sel.beat, pn.at) ? P.sel.syl : ''});
+  ensureVisible(); updateEditBar(); draw();
+}
+function confirmPending(){
+  const pn = P.pending; if (!pn) return false;
   pushUndo();
-  const adding = P.addAt != null;
-  const nn = writeNote(at, dur, midi);
-  P.sel = nn; P.addAt = adding ? rnd(at + dur) : null;
-  afterEdit(); previewNote(nn);
+  const nn = writeNote(pn.at, pn.dur, pn.midi);
+  P.pending = null; P.sel = nn; P.addAt = pn.adding ? rnd(pn.at + pn.dur) : null;
+  afterEdit();
+  return true;
 }
 function editAction(a){
   const v = curVoice(); if (!v || run) return;
   const list = v.ev, i = P.sel ? list.indexOf(P.sel) : -1;
+  if (a === 'confirm'){ if (!confirmPending()) toast('No hay ninguna nota para confirmar: escribí una nota y su figura (por ejemplo r2).'); return; }
+  if (P.pending){
+    const pn = P.pending, d = {up:1, down:-1, oup:12, odown:-12}[a];
+    if (d){ setPending({...pn, midi:pn.midi + d}); return; }
+    if (a === 'dot'){ setPending({...pn, dur:pn.dur * 1.5}); return; }
+    P.pending = null;   // cualquier otra acción descarta la vista previa
+  }
   if (a === 'undo') return undoEdit();
   if (a === 'prev' || a === 'next'){
     let j;
@@ -2397,7 +2429,7 @@ function editAction(a){
     pushUndo(); P.sel.midi += {up:1, down:-1, oup:12, odown:-12}[a]; afterEdit(); previewNote(P.sel); return;
   }
   if (a === 'del'){ pushUndo(); const j = i; v.ev = list.filter(e => e !== P.sel); P.sel = v.ev[j] || null; afterEdit(); return; }
-  if (a === 'dot'){ pushUndo(); const n = writeNote(P.sel.beat, P.sel.dur * 1.5, P.sel.midi); P.sel = n; afterEdit(); return; }
+  if (a === 'dot'){ setPending({at:P.sel.beat, dur:P.sel.dur * 1.5, midi:P.sel.midi, adding:false}); return; }
   const end = rnd(P.sel.beat + P.sel.dur);
   if (a === 'breath'){ pushUndo(); toggleBreath(v, end); afterEdit(); return; }
   if (a === 'pause'){
@@ -2428,7 +2460,8 @@ window.addEventListener('keydown', e => {
   if (k === 'ArrowLeft') return go('prev');
   if (k === 'ArrowRight') return go('next');
   if (k === 'Delete' || k === 'Backspace') return go('del');
-  if (k === 'Escape'){ P.sel = null; P.addAt = null; keyBuf = ''; updateEditBar(); draw(); return; }
+  if (k === 'Escape'){ keyBuf = ''; if (P.pending){ P.pending = null; updateEditBar(); draw(); return; } P.sel = null; P.addAt = null; updateEditBar(); draw(); return; }
+  if (k === 'Enter'){ e.preventDefault(); keyBuf = ''; editAction('confirm'); return; }
   if (k === '.') return go('dot');
   if (k === '+' || k === '#'){ if (keyBuf){ keyAlt = 1; e.preventDefault(); } return; }
   if (k === '-'){ if (keyBuf){ keyAlt = -1; e.preventDefault(); } return; }
@@ -2620,7 +2653,7 @@ const tempo = $('#tempo');
 function syncTempo(){ tempo.value = P.song.tempo || 80; $('#tempoOut').textContent = (P.song.tempo || 80) + ' pulsos por minuto'; }
 tempo.addEventListener('input', e => { P.song.tempo = +e.target.value; syncTempo(); save(); });
 $('#loop').addEventListener('change', e => { P.loop = e.target.checked; });
-$('#editMode').addEventListener('change', e => { P.edit = e.target.checked; P.sel = null; P.addAt = null; updateEditBar(); draw(); });
+$('#editMode').addEventListener('change', e => { P.edit = e.target.checked; P.sel = null; P.addAt = null; P.pending = null; updateEditBar(); draw(); });
 $('#timbre').value = useVowels() ? 'vocal' : 'tono';
 $('#timbre').addEventListener('change', e => { try { localStorage.setItem('pt.timbre', e.target.value); } catch(err){} });
 $('#phones').checked = usingPhones();
