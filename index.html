@@ -315,6 +315,8 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
         <p class="hint">Elegí cuál es tu voz. Al cantar, tu voz queda en silencio y suenan las demás. <a href="#/mi-voz">¿No sabés cuál es tu voz?</a></p>
         <div id="mixer" role="radiogroup" aria-label="Tu voz"></div>
         <label class="switch"><input type="checkbox" id="singGuide" role="switch"><span>Oír mi voz de guía mientras canto</span></label>
+        <label class="switch"><input type="checkbox" id="phones" role="switch" data-lock><span>Estoy usando auriculares</span></label>
+        <p class="hint" style="margin-top:0">Con auriculares el micrófono escucha solo tu voz y la detección es más precisa. Sin auriculares, la herramienta descarta lo que viene del parlante.</p>
       </details>
 
       <section class="panel" id="results" hidden aria-live="polite">
@@ -432,7 +434,7 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '3.8', APP_FECHA = '2026-10-04';
+const APP_VERSION = '3.9', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -1667,13 +1669,16 @@ function click(t, accent, nodes){
 
 /* ---------- Micrófono y detección de tono (YIN) ---------- */
 let stream = null, analyser = null, tbuf = null; const yin = new Float32Array(1024);
+// En cada dispositivo se recuerda si se canta con auriculares (no viaja con los temas)
+function usingPhones(){ try { return localStorage.getItem('pt.auriculares') === '1'; } catch(e){ return false; } }
+function setPhones(on){ try { localStorage.setItem('pt.auriculares', on ? '1' : '0'); } catch(e){} }
 function setAudioSession(type){ try { if (navigator.audioSession) navigator.audioSession.type = type; } catch(e){} }
 async function micStart(){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ const e = new Error('nomic'); e.name = 'NoMic'; throw e; }
   // En iPhone, el modo «solo reproducir» (para que suene aunque esté en silencio) no deja grabar
   setAudioSession('play-and-record');
   try {
-    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:false, autoGainControl:true}});
+    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:!usingPhones(), noiseSuppression:false, autoGainControl:true}});
   } catch(e){
     if (e.name !== 'OverconstrainedError' && e.name !== 'TypeError'){ setAudioSession('playback'); throw e; }
     stream = await navigator.mediaDevices.getUserMedia({audio:true});   // algunos teléfonos no aceptan las opciones
@@ -1816,10 +1821,16 @@ function frame(now){
   let f = detect();
   showLevel('lvl');
   if (f && run.nowRel >= 0){
-    const m = 69 + 12 * Math.log2(f / 440), tg = run.evs[evAt(run.local)], acc = audibleNow(run.local);
-    const onTarget = tg && pcDist(m, tg.midi) < .6, onAcc = acc.some(a => pcDist(m, a) < .45);
-    if (onAcc && !onTarget){ bleed.push(micLevel); if (bleed.length > 150) bleed.shift(); f = null; run.bleedHits = (run.bleedHits || 0) + 1; }
-    else if (onAcc && onTarget && micLevel < bleedRef() * 1.6) f = null;
+    run.rawVoiced = (run.rawVoiced || 0) + 1;
+    if (!usingPhones()){
+      const m = 69 + 12 * Math.log2(f / 440), tg = run.evs[evAt(run.local)], acc = audibleNow(run.local);
+      if (acc.some(a => pcDist(m, a) < .45)){
+        const onTarget = tg && pcDist(m, tg.midi) < .6, ref = bleedRef();
+        // en tus silencios todo lo que suena es el parlante: así se aprende cuánto llega en este dispositivo
+        if (!tg){ bleed.push(micLevel); if (bleed.length > 150) bleed.shift(); f = null; }
+        else if (ref ? micLevel < ref * 1.6 : !onTarget){ f = null; run.bleedHits = (run.bleedHits || 0) + 1; }
+      }
+    }
   }
   if (f) run.heard = true;
   if (!run.heard && run.nowRel > 6 && !run.hinted){ run.hinted = true; setMsg(NO_OIGO); }
@@ -1862,7 +1873,7 @@ function finalizePass(upto){
     status.push(st); scores.push(sc);
   });
   P.status = status; P.scores = scores;
-  P.summary = {good, counted, bias:nV ? sumC / nV : 0, nV, frames};
+  P.summary = {good, counted, bias:nV ? sumC / nV : 0, nV, frames, bleedPct:run.rawVoiced ? (run.bleedHits || 0) / run.rawVoiced : 0};
   renderResults();
 }
 function finish(){ stop(true); }
@@ -2159,6 +2170,7 @@ function renderResults(){
   else if (R.bias >= 20) tip = 'Tendés a cantar un poco alto. Probá relajar la garganta y bajar un pelo.';
   else if (R.bias <= -20) tip = 'Tendés a cantar un poco bajo. Probá apoyar más el aire y subir un pelo.';
   else tip = 'Tu afinación general está bien centrada.';
+  if (R.bleedPct > .2 && !usingPhones()) tip += ` Descarté ${Math.round(R.bleedPct * 100)}% de lo que escuché por parecerse a las otras voces del parlante: si usás auriculares, activá «Estoy usando auriculares» en Voces y volumen.`;
   tip += ' Tocá un compás para practicarlo solo.';
   $('#resTip').textContent = tip;
   const chips = $('#chips'); chips.innerHTML = '';
@@ -2222,6 +2234,8 @@ function syncTempo(){ tempo.value = P.song.tempo || 80; $('#tempoOut').textConte
 tempo.addEventListener('input', e => { P.song.tempo = +e.target.value; syncTempo(); save(); });
 $('#loop').addEventListener('change', e => { P.loop = e.target.checked; });
 $('#breathEdit').addEventListener('change', e => { $('#breathHint').hidden = !e.target.checked; });
+$('#phones').checked = usingPhones();
+$('#phones').addEventListener('change', e => setPhones(e.target.checked));
 $('#singGuide').addEventListener('change', e => { P.singGuide = e.target.checked; if (run) applyGains(run.mode === 'sing'); });
 
 function buildMixer(){
