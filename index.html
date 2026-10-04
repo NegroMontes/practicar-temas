@@ -395,6 +395,8 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
         <div id="mixer" role="radiogroup" aria-label="Tu voz"></div>
         <label class="switch"><input type="checkbox" id="singGuide" role="switch"><span>Oír mi voz de guía mientras canto</span></label>
         <label class="fld" style="margin-top:6px">Sonido de las voces <select id="timbre"><option value="vocal">Cantado, con la vocal de la letra</option><option value="tono">Tono simple</option></select></label>
+        <label class="fld" style="margin-top:6px">Micrófono <select id="micSel" data-lock><option value="">Automático (evita el micrófono de los auriculares Bluetooth)</option></select></label>
+        <div class="filebtns" style="margin-top:0"><button class="small" type="button" id="micTest" data-lock>Probar el micrófono</button></div>
         <label class="switch"><input type="checkbox" id="phones" role="switch" data-lock><span>Estoy usando auriculares</span></label>
         <p class="hint" style="margin-top:0">Con auriculares el micrófono escucha solo tu voz y la detección es más precisa. Sin auriculares, la herramienta descarta lo que viene del parlante.</p>
         <div class="row" style="margin-top:8px"><label for="delay"><strong>Retraso del audio</strong></label><output id="delayOut" for="delay"></output></div>
@@ -550,7 +552,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '4.14', APP_FECHA = '2026-10-04';
+const APP_VERSION = '4.15', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -1978,15 +1980,77 @@ async function micStart(){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ const e = new Error('nomic'); e.name = 'NoMic'; throw e; }
   // En iPhone, el modo «solo reproducir» (para que suene aunque esté en silencio) no deja grabar
   setAudioSession('play-and-record');
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:!usingPhones(), noiseSuppression:false, autoGainControl:true}});
-  } catch(e){
-    if (e.name !== 'OverconstrainedError' && e.name !== 'TypeError'){ setAudioSession('playback'); throw e; }
-    stream = await navigator.mediaDevices.getUserMedia({audio:true});   // algunos teléfonos no aceptan las opciones
+  const opts = id => ({audio:{echoCancellation:!usingPhones(), noiseSuppression:false, autoGainControl:true, ...(id ? {deviceId:{exact:id}} : {})}});
+  const open = async id => {
+    try { return await navigator.mediaDevices.getUserMedia(opts(id)); }
+    catch(e){
+      if (id && (e.name === 'OverconstrainedError' || e.name === 'NotFoundError')) return open('');   // el elegido no está conectado
+      if (e.name !== 'OverconstrainedError' && e.name !== 'TypeError'){ setAudioSession('playback'); throw e; }
+      return navigator.mediaDevices.getUserMedia({audio:true});   // algunos teléfonos no aceptan las opciones
+    }
+  };
+  stream = await open(micChoice());
+  if (!micChoice() && isBtMic(micLabel())){
+    const alt = (await micDevices()).find(d => d.deviceId && !/^(default|communications)$/.test(d.deviceId) && !isBtMic(d.label) && !BAD_MIC.test(d.label));
+    if (alt){ stream.getTracks().forEach(t => t.stop()); stream = await open(alt.deviceId); }
   }
+  fillMics();
   const src = ac.createMediaStreamSource(stream);
   analyser = ac.createAnalyser(); analyser.fftSize = 2048; src.connect(analyser);
   tbuf = new Float32Array(analyser.fftSize);
+}
+const BT_MIC = /hands-?free|manos libres|bluetooth|headset|auriculares con micr|airpods|buds|\bbt\b/i, BAD_MIC = /stereo mix|mezcla est|what u hear/i;
+const isBtMic = l => BT_MIC.test(l || '');
+function micChoice(){ try { return localStorage.getItem('pt.mic') || ''; } catch(e){ return ''; } }
+function micLabel(){ const t = stream && stream.getAudioTracks()[0]; return t ? t.label : ''; }
+async function micDevices(){ try { return (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput'); } catch(e){ return []; } }
+async function fillMics(){
+  const sel = $('#micSel'); if (!sel || !navigator.mediaDevices) return;
+  const ds = (await micDevices()).filter(d => d.deviceId && !/^(default|communications)$/.test(d.deviceId)), cur = micChoice();
+  sel.innerHTML = '<option value="">Automático (evita el micrófono de los auriculares Bluetooth)</option>'
+    + ds.map((d, i) => `<option value="${esc(d.deviceId)}"${d.deviceId === cur ? ' selected' : ''}>${esc(d.label || 'Micrófono ' + (i + 1))}</option>`).join('');
+  if (cur && !ds.some(d => d.deviceId === cur)) sel.value = '';
+}
+function micAdvice(label){
+  if (isBtMic(label)) return 'Estás usando el micrófono de los auriculares Bluetooth: graba con calidad de teléfono y además empeora el sonido de los auriculares. Elegí el micrófono de la computadora en «Micrófono».';
+  if (BAD_MIC.test(label)) return '«Mezcla estéreo» no es un micrófono: graba lo que suena en la computadora. Elegí otro en «Micrófono».';
+  return '';
+}
+/* Probar el micrófono: muestra el nivel y la nota que escucha */
+function micTestDialog(){
+  ensureAudio();
+  const T = {on:false, raf:0, last:0, hist:[], lastV:0};
+  openDlg(`<h2>Probar el micrófono</h2>
+    <p class="hint" style="margin-top:0">Cantá una nota larga con «a». Si está bien, la nota queda quieta y la barra se pone verde.</p>
+    <div class="vzgrid"><div class="cell"><span class="lab">Escucho</span><span class="big" id="mxNote">–</span><span class="hint" id="mxHz" style="margin:0"></span></div>
+      <div class="cell"><span class="lab">Estabilidad</span><span class="big" id="mxStab">–</span></div></div>
+    <div class="level"><span class="lab">Micrófono</span><div class="lvltrack"><div class="lvlbar" id="mxLvl"></div></div></div>
+    <p class="hint" id="mxDev"></p>
+    <p class="verdict" id="mxAdv"></p>
+    <div class="dlgbtns"><button class="btn secondary compact" data-close type="button">Cerrar</button></div>`);
+  const stopT = () => { T.on = false; cancelAnimationFrame(T.raf); micStop(); };
+  dlg.addEventListener('close', stopT, {once:true});
+  const loop = now => {
+    if (!T.on) return;
+    if (now - T.last >= 30 && analyser){
+      T.last = now;
+      const f = detect(); showLevel('mxLvl');
+      if (f){ T.hist.push(hzToMidi(f)); if (T.hist.length > 12) T.hist.shift(); T.lastV = now; }
+      else if (now - T.lastV > 300) T.hist.length = 0;
+      if (T.hist.length >= 3){
+        const m = median(T.hist), sp = Math.max(...T.hist) - Math.min(...T.hist);
+        $('#mxNote').textContent = nameOf(Math.round(m)); $('#mxHz').textContent = Math.round(440 * 2 ** ((m - 69) / 12)) + ' Hz';
+        $('#mxStab').textContent = sp < .5 ? 'buena' : sp < 1.2 ? 'regular' : 'mala';
+      } else if (now - T.lastV > 600){ $('#mxNote').textContent = '–'; $('#mxHz').textContent = ''; $('#mxStab').textContent = '–'; }
+    }
+    T.raf = requestAnimationFrame(loop);
+  };
+  micStart().then(() => {
+    T.on = true; T.raf = requestAnimationFrame(loop);
+    const l = micLabel(), adv = micAdvice(l);
+    $('#mxDev').textContent = l ? 'Usando: ' + l : '';
+    if (adv){ $('#mxAdv').textContent = adv; $('#mxAdv').className = 'verdict bad'; }
+  }).catch(e => { $('#mxAdv').textContent = micErrorText(e); $('#mxAdv').className = 'verdict bad'; });
 }
 function micStop(){
   if (stream){ stream.getTracks().forEach(t => t.stop()); setAudioSession('playback'); }
@@ -2037,7 +2101,11 @@ function detect(){
   for (let t = tauMin; t < tauMax; t++){
     if (yin[t] < .16){ while (t + 1 < tauMax && yin[t + 1] < yin[t]) t++; te = t; break; }
   }
-  if (te < 0) return null;
+  if (te < 0){
+    let mn = .26;
+    for (let t = tauMin; t < tauMax; t++) if (yin[t] < mn){ mn = yin[t]; te = t; }
+    if (te < 0) return null;
+  }
   let better = te;
   if (te > 1 && te + 1 <= tauMax){
     const s0 = yin[te - 1], s1 = yin[te], s2 = yin[te + 1], den = 2 * (2 * s1 - s2 - s0);
@@ -2162,7 +2230,7 @@ function frame(now){
     }
   }
   if (f) run.heard = true;
-  if (!run.heard && run.nowRel > 6 && !run.hinted){ run.hinted = true; setMsg(NO_OIGO); }
+  if (!run.heard && run.nowRel > 6 && !run.hinted){ run.hinted = true; setMsg(micAdvice(micLabel()) || NO_OIGO); }
   let fresh = false;
   if (f){ run.hist.push(69 + 12 * Math.log2(f / 440)); if (run.hist.length > 3) run.hist.shift(); run.lastVoiced = now; fresh = true; }
   else if (now - run.lastVoiced > 160) run.hist.length = 0;
@@ -2991,6 +3059,10 @@ function calibrateDelay(){
     }
   }, 50);
 }
+fillMics();
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', fillMics);
+$('#micSel').addEventListener('change', e => { try { localStorage.setItem('pt.mic', e.target.value); } catch(x){} });
+$('#micTest').addEventListener('click', micTestDialog);
 $('#phones').checked = usingPhones();
 $('#phones').addEventListener('change', e => setPhones(e.target.checked));
 $('#singGuide').addEventListener('change', e => { P.singGuide = e.target.checked; if (run) applyGains(run.mode === 'sing'); });
