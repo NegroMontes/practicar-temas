@@ -261,6 +261,9 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 .lyredit label{font-weight:700;font-size:14px}
 .lyredit input{width:auto;flex:1;min-width:120px;font:500 20px "EB Garamond",Georgia,serif}
 .lyredit .hint{flex-basis:100%;margin:2px 0 0}
+.msmode{display:flex;flex-direction:column;gap:0;margin-top:4px}
+.msmode .choice{cursor:pointer}
+.msmode .choice input{accent-color:var(--violet);width:18px;height:18px;vertical-align:-3px}
 .prueba{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .sexbtns{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
 .sexbtns .small[aria-pressed="true"]{background:var(--violet);border-color:var(--violet);color:var(--on-violet)}
@@ -543,7 +546,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '4.9', APP_FECHA = '2026-10-04';
+const APP_VERSION = '4.10', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -2420,15 +2423,16 @@ const DUR_BY_N = {1:4, 2:2, 3:1, 4:.5, 5:.25, 6:.125};
 const DUR_NAME = {4:'redonda', 2:'blanca', 1:'negra', .5:'corchea', .25:'semicorchea', .125:'fusa', 6:'redonda con puntillo', 3:'blanca con puntillo', 1.5:'negra con puntillo', .75:'corchea con puntillo', .375:'semicorchea con puntillo'};
 const NOTE_PC = {d:0, do:0, r:2, re:2, m:4, mi:4, f:5, fa:5, s:7, so:7, sol:7, l:9, la:9, si:11, b:11};
 function pushUndo(){
-  const v = curVoice(); if (!v) return;
-  P.undo.push(JSON.stringify({vid:v.id, ev:v.ev, br:v.breaths || [], bo:v.breathOff || [], pz:P.song.pauses || [], ml:P.song.mlen, mlab:P.song.mlab || null, secs:P.song.sections}));
+  if (!P.song) return;
+  P.undo.push(JSON.stringify({vs:P.song.voices.map(v => ({id:v.id, ev:v.ev, br:v.breaths || [], bo:v.breathOff || []})),
+    pz:P.song.pauses || [], ml:P.song.mlen, mlab:P.song.mlab || null, secs:P.song.sections}));
   if (P.undo.length > 80) P.undo.shift();
 }
 function undoEdit(){
   const u = P.undo.pop(); if (!u){ toast('No hay nada para deshacer.'); return; }
-  const d = JSON.parse(u), v = P.song.voices.find(x => x.id === d.vid); if (!v) return;
-  v.ev = d.ev; v.breaths = d.br; v.breathOff = d.bo; P.song.pauses = d.pz; P.song.mlen = d.ml;
-  if ('mlab' in d) P.song.mlab = d.mlab; if (d.secs) P.song.sections = d.secs;
+  const d = JSON.parse(u);
+  d.vs.forEach(x => { const v = P.song.voices.find(v => v.id === x.id); if (v){ v.ev = x.ev; v.breaths = x.br; v.breathOff = x.bo; } });
+  P.song.pauses = d.pz; P.song.mlen = d.ml; P.song.mlab = d.mlab; P.song.sections = d.secs;
   P.sel = null; afterEdit();
 }
 function afterEdit(doSave = true){
@@ -2523,12 +2527,66 @@ function measureDialog(){
     <div class="two"><label>Tiempos <select id="msN">${Array.from({length:16}, (_, k) => `<option${k + 1 === n0 ? ' selected' : ''}>${k + 1}</option>`).join('')}</select></label>
       <label>Figura de cada tiempo <select id="msD">${[[2, 'blanca (2)'], [4, 'negra (4)'], [8, 'corchea (8)'], [16, 'semicorchea (16)']].map(([d, t]) => `<option value="${d}"${d === d0 ? ' selected' : ''}>${t}</option>`).join('')}</select></label></div>
     <label class="switch"><input type="checkbox" id="msAll"><span>También todos los compases siguientes</span></label>
+    <div class="msmode">
+      <label class="choice"><span><input type="radio" name="msMode" value="tiempo"${measureMode() === 'tiempo' ? ' checked' : ''}> <strong>Agregar o quitar tiempo</strong></span>
+        <span>Las notas que siguen se corren con su compás. Si se alarga, queda silencio al final del compás (en todas las voces); si se acorta, se quita el final del compás.</span></label>
+      <label class="choice"><span><input type="radio" name="msMode" value="barras"${measureMode() === 'barras' ? ' checked' : ''}> <strong>Mover las barras</strong></span>
+        <span>Las notas quedan donde están; solo cambia dónde empieza cada compás (para arreglar compases mal leídos o una anacrusa).</span></label>
+    </div>
     <p class="hint">Ejemplos: 4/4 = cuatro negras · 3/4 = tres negras · 6/8 = seis corcheas · una anacrusa de una negra = 1/4 solo en el primer compás.</p>
     <div class="dlgbtns"><button class="btn secondary compact" data-close type="button">Cancelar</button><button class="btn primary compact" id="msOk" type="button">Aplicar</button></div>`);
   $('#msOk').addEventListener('click', () => {
-    const len = rnd(+$('#msN').value * 4 / +$('#msD').value), all = $('#msAll').checked;
-    dlg.close(); setMeasureLen(i, len, all);
+    const len = rnd(+$('#msN').value * 4 / +$('#msD').value), all = $('#msAll').checked, mode = dlg.querySelector('input[name=msMode]:checked').value;
+    try { localStorage.setItem('pt.modoCompas', mode); } catch(e){}
+    dlg.close();
+    if (mode === 'barras') setMeasureLen(i, len, all); else resizeMeasures(i, len, all);
   });
+}
+function measureMode(){ try { return localStorage.getItem('pt.modoCompas') || 'tiempo'; } catch(e){ return 'tiempo'; } }
+/* Agregar o quitar tiempo al final del compás k: todo lo que sigue (notas de todas las voces,
+   respiraciones y pausas) se corre. Devuelve cuántas notas se borraron al acortar. */
+function resizeMeasure(k, len){
+  const song = P.song, st = measureStarts(song.mlen), E = st[k + 1], d = rnd(len - song.mlen[k]);
+  if (Math.abs(d) < 1e-6) return 0;
+  let removed = 0;
+  if (d > 0){
+    const sh = b => b >= E - 1e-6 ? rnd(b + d) : b;
+    song.voices.forEach(v => {
+      v.ev = v.ev.map(e => e.beat >= E - 1e-6 ? {...e, beat:rnd(e.beat + d)}
+        : e.beat + e.dur > E + 1e-6 ? {...e, dur:rnd(e.dur + d)}   // ligada por encima de la barra: se sostiene
+        : e);
+      v.breaths = (v.breaths || []).map(sh); v.breathOff = (v.breathOff || []).map(sh);
+    });
+    song.pauses = (song.pauses || []).map(q => ({...q, beat:sh(q.beat)}));
+  } else {
+    const C = rnd(E + d);   // se quita el tramo [C, E)
+    const fix = b => b >= E - 1e-6 ? rnd(b + d) : b > C + 1e-6 ? null : b;
+    song.voices.forEach(v => {
+      const out = [];
+      v.ev.forEach(e => {
+        const s0 = e.beat, e0 = rnd(e.beat + e.dur);
+        if (s0 >= E - 1e-6){ out.push({...e, beat:rnd(s0 + d)}); return; }
+        if (e0 <= C + 1e-6){ out.push(e); return; }
+        const ns = Math.min(s0, C), ne = e0 > E + 1e-6 ? rnd(e0 + d) : C;
+        if (ne - ns > 1e-6) out.push({...e, beat:rnd(ns), dur:rnd(ne - ns), syl:s0 < C - 1e-6 ? e.syl : ''});
+        else removed++;
+      });
+      v.ev = out;
+      v.breaths = (v.breaths || []).map(fix).filter(b => b != null); v.breathOff = (v.breathOff || []).map(fix).filter(b => b != null);
+    });
+    song.pauses = (song.pauses || []).map(q => ({...q, beat:fix(q.beat)})).filter(q => q.beat != null);
+  }
+  song.mlen[k] = rnd(len);
+  return removed;
+}
+function resizeMeasures(i, len, all){
+  pushUndo();
+  let removed = 0;
+  const last = all ? P.song.mlen.length - 1 : i;
+  for (let k = last; k >= i; k--) removed += resizeMeasure(k, len);   // de atrás para adelante: no cambia dónde empiezan los anteriores
+  if (P.sel && !P.song.voices.some(v => v.ev.includes(P.sel))) P.sel = null;
+  afterEdit();
+  toast(`Compás ${measureLabel(P.song, i)}${all ? ' y los siguientes' : ''}: ${lenToSig(len).join('/')}.${removed ? ` Se borraron ${removed} nota${removed > 1 ? 's' : ''} que quedaban en el tiempo quitado (Ctrl+Z para deshacer).` : ''}`);
 }
 function setMeasureLen(i, len, all){
   const song = P.song;
