@@ -522,7 +522,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '4.2', APP_FECHA = '2026-10-04';
+const APP_VERSION = '4.3', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -792,10 +792,13 @@ function splitName(p, i, n){
    la nota de arriba para la primera, la siguiente para la segunda, etc. Donde vuelve a haber
    una sola nota, las voces cantan al unísono; en tramos largos sin acordes la voz agregada calla.
    Si los acordes son pocos (un divisi suelto), queda una sola voz con la nota de arriba. */
-function makeLayers(groups){
+function makeLayers(groups, lower){
   const maxN = Math.max(1, ...groups.map(g => g.notes.length));
-  const chords = groups.filter(g => g.notes.length > 1).length;
-  const n = maxN > 1 && (chords >= 8 || chords >= groups.length * .15) ? maxN : 1;
+  const chordGs = groups.filter(g => g.notes.length > 1), chords = chordGs.length;
+  // acordes repartidos en al menos 4 compases distintos; si están en pocos lugares suelen ser
+  // una nota compartida con otra voz (cabeza de nota con dos plicas) o un divisi suelto
+  const spread = new Set(chordGs.map(g => g.m ?? Math.floor(g.beat / 4))).size;
+  const n = maxN > 1 && spread >= 4 && (chords >= 8 || chords >= groups.length * .15) ? maxN : 1;
   groups.forEach(g => g.notes.sort((a, b) => b.midi - a.midi));
   const brs = [...(groups.br || []), ...groups.filter(g => g.breath).map(g => rnd(g.beat + g.dur))];
   const layers = [];
@@ -812,7 +815,8 @@ function makeLayers(groups){
     const ev = [];
     groups.forEach((g, i) => {
       if (!active[i]) return;
-      const nt = g.notes[Math.min(L, g.notes.length - 1)], prev = ev[ev.length - 1];
+      // una sola voz: la de arriba se queda con la nota más aguda; una voz de abajo, con la más grave
+      const nt = n === 1 && lower ? g.notes[g.notes.length - 1] : g.notes[Math.min(L, g.notes.length - 1)], prev = ev[ev.length - 1];
       if (nt.tieStop && prev && prev.midi === nt.midi && Math.abs(prev.beat + prev.dur - g.beat) < 1e-3) prev.dur = rnd(prev.dur + g.dur);
       else ev.push({beat:g.beat, dur:g.dur, midi:nt.midi, syl:g.syl});
     });
@@ -872,7 +876,7 @@ function parseMusicXML(text, fname){
             const lyr = kids(el, 'lyric'), l1 = lyr.find(l => (l.getAttribute('number') || '1') === '1') || lyr[0];
             const sb = l1 ? txt(l1, 'syllabic') : null;
             const syl = l1 ? [...l1.children].map(c => c.nodeName === 'text' ? c.textContent : c.nodeName === 'elision' ? '‿' : '').join('').trim() + (sb === 'begin' || sb === 'middle' ? '-' : '') : '';
-            g = {beat:b, dur:rnd(dur), notes:[{midi, tieStop}], syl};
+            g = {beat:b, dur:rnd(dur), notes:[{midi, tieStop}], syl, m:lens.length};
             gs.push(g);
           }
           if (el.querySelector('breath-mark')) g.breath = true;
@@ -887,7 +891,7 @@ function parseMusicXML(text, fname){
     const keys = [...voices.keys()].filter(k => voices.get(k).length).sort((a, b) => {
       const [sa, va] = a.split('/').map(Number), [sb, vb] = b.split('/').map(Number); return sa - sb || va - vb; });
     const layered = [];
-    keys.forEach(key => makeLayers(voices.get(key)).forEach(ev => layered.push(ev)));
+    keys.forEach((key, ki) => makeLayers(voices.get(key), ki > 0 && keys[ki - 1].split('/')[0] === key.split('/')[0]).forEach(ev => layered.push(ev)));
     layered.forEach((ev, i) => {
       const name = layered.length > 1 ? (splitName(pname, i, layered.length) || `${pname || 'Parte ' + (pi + 1)} · ${i + 1}`) : (pname || `Parte ${pi + 1}`);
       // Tenor escrito en clave de Sol común: suena una octava más abajo de lo escrito
@@ -1033,7 +1037,7 @@ function parseMscx(text, fname){
               const lyr = kids(el, 'Lyrics'), l1 = lyr.find(l => !txt(l, 'no') || txt(l, 'no') === '0') || lyr[0];
               const sb = l1 ? txt(l1, 'syllabic') : null;
               const syl = l1 ? lyricText(kid(l1, 'text')) + (sb === 'begin' || sb === 'middle' ? '-' : '') : '';
-              ev.push({beat:rnd(mStart + cur), dur:rnd(d), syl, notes:notes.map(n => ({midi:+txt(n, 'pitch'),
+              ev.push({beat:rnd(mStart + cur), dur:rnd(d), syl, m:lens.length, notes:notes.map(n => ({midi:+txt(n, 'pitch'),
                 tieStop:kids(n, 'Spanner').some(sp => sp.getAttribute('type') === 'Tie' && kid(sp, 'prev'))}))});
             }
             cur += d;
@@ -1048,7 +1052,7 @@ function parseMscx(text, fname){
     if (!mlen){ mlen = lens; mlab = labs; }
     const keys = [...voices.keys()].filter(k => voices.get(k).length).sort((a, b) => a - b);
     const layered = [];
-    keys.forEach(k => makeLayers(voices.get(k)).forEach(ev => layered.push(ev)));
+    keys.forEach((k, ki) => makeLayers(voices.get(k), ki > 0).forEach(ev => layered.push(ev)));
     layered.forEach((ev, i) => cands.push({name:layered.length > 1 ? (splitName(sname, i, layered.length) || `${sname} · ${i + 1}`) : sname,
       ev, shift:0, breaths:ev.br || []}));
   });
@@ -1117,6 +1121,11 @@ function guessName(name){
 function importDialog(parsed, opts){
   const song = opts.song, isNew = !song;
   const cs = parsed.cands.map(c => ({...c, name:guessName(c.name), on:true}));
+  // la letra suele estar pegada a una sola voz (sobre todo al leer un PDF): cada voz toma, en las notas
+  // donde no tiene sílaba, la que tenga otra voz en ese mismo momento (primero la voz con más letra)
+  const sylCount = c => c.ev.filter(e => e.syl).length, lyr = new Map();
+  [...cs].sort((a, b) => sylCount(b) - sylCount(a)).forEach(c => c.ev.forEach(e => { if (e.syl && !lyr.has(e.beat)) lyr.set(e.beat, e.syl); }));
+  cs.forEach(c => { c.ev = c.ev.map(e => e.syl || !lyr.has(e.beat) ? e : {...e, syl:lyr.get(e.beat)}); });
   if (cs.length === 4 && !cs.some(c => REF.some(r => r.rx.test(c.name.trim())))) ['Soprano','Alto','Tenor','Bajo'].forEach((n, i) => cs[i].name = n);
   // Tenor escrito (o grabado) una octava arriba de lo que se canta
   cs.forEach(c => { if (!c.shift && /ten/i.test(c.name) && median(c.ev.map(e => e.midi)) > 64) c.shift = -12; });
