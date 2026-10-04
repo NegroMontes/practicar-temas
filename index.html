@@ -546,7 +546,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '4.10', APP_FECHA = '2026-10-04';
+const APP_VERSION = '4.11', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -1549,6 +1549,8 @@ function renderEdit(){
     : '<p class="hint" style="margin:0">Todavía no hay partituras en este tema.</p>';
   $('#eVoices').innerHTML = s.voices.length ? s.voices.map(v => { const r = voiceRange(v); return `<div class="erow" data-v="${v.id}">
       <span class="grow"><input type="text" value="${esc(v.name)}" aria-label="Nombre de la voz"><p class="vinfo">${v.ev.length ? `${fullName(r.lo)} a ${fullName(r.hi)} · ${v.ev.length} notas` : 'sin notas'}</p></span>
+      <button class="small" type="button" data-act="oct-" title="Bajar toda la voz una octava">8va ↓</button>
+      <button class="small" type="button" data-act="oct+" title="Subir toda la voz una octava">8va ↑</button>
       <button class="small" type="button" data-act="notas">Notas</button>
       <button class="small danger" type="button" data-act="del" aria-label="Borrar la voz ${esc(v.name)}">Borrar</button></div>`; }).join('')
     : '<p class="hint" style="margin:0">Todavía no hay voces.</p>';
@@ -1613,6 +1615,12 @@ $('#eVoices').addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const s = editSong(), v = s.voices.find(x => x.id === b.closest('[data-v]').dataset.v);
   if (b.dataset.act === 'notas') textEditor(s, v);
+  if (b.dataset.act === 'oct-' || b.dataset.act === 'oct+'){
+    const d = b.dataset.act === 'oct-' ? -12 : 12;
+    v.ev.forEach(e => e.midi += d); save(); renderEdit();
+    const r = voiceRange(v);
+    toast(`${v.name}: una octava más ${d < 0 ? 'abajo' : 'arriba'} (ahora de ${fullName(r.lo)} a ${fullName(r.hi)}).`);
+  }
   if (b.dataset.act === 'del' && confirm(`¿Borrar la voz «${v.name}»?`)){ s.voices = s.voices.filter(x => x !== v); if (s.myVoice === v.id) delete s.myVoice; save(); renderEdit(); }
 });
 $('#eAddPart').addEventListener('click', () => {
