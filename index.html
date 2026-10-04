@@ -541,7 +541,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '4.4', APP_FECHA = '2026-10-04';
+const APP_VERSION = '4.5', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -1145,7 +1145,18 @@ function importDialog(parsed, opts){
   const sylCount = c => c.ev.filter(e => e.syl).length, lyr = new Map();
   [...cs].sort((a, b) => sylCount(b) - sylCount(a)).forEach(c => c.ev.forEach(e => { if (e.syl && !lyr.has(e.beat)) lyr.set(e.beat, e.syl); }));
   cs.forEach(c => { c.ev = c.ev.map(e => e.syl || !lyr.has(e.beat) ? e : {...e, syl:lyr.get(e.beat)}); });
-  if (cs.length === 4 && !cs.some(c => REF.some(r => r.rx.test(c.name.trim())))) ['Soprano','Alto','Tenor','Bajo'].forEach((n, i) => cs[i].name = n);
+  // voces sin nombre de cuerda (Audiveris las llama «Voice»): de arriba hacia abajo, la cuerda cuyo registro
+  // mejor coincide con la altura de cada voz, sin repetir ni cruzar el orden
+  if (cs.length >= 2 && cs.length <= 4 && !cs.some(c => REF.some(r => r.rx.test(c.name.trim())))){
+    const NAMES = ['Soprano', 'Alto', 'Tenor', 'Bajo'], meds = cs.map(c => median(c.ev.map(e => e.midi)) + c.shift);
+    let best = null;
+    const walk = (i, from, pick, cost) => {
+      if (i === cs.length){ if (!best || cost < best.cost) best = {pick:[...pick], cost}; return; }
+      for (let r = from; r <= 4 - (cs.length - i); r++){ const ref = REF[r]; pick.push(r); walk(i + 1, r + 1, pick, cost + Math.abs(meds[i] - (ref.lo + ref.hi) / 2)); pick.pop(); }
+    };
+    walk(0, 0, [], 0);
+    best.pick.forEach((r, i) => cs[i].name = NAMES[r]);
+  }
   // Tenor escrito (o grabado) una octava arriba de lo que se canta
   cs.forEach(c => { if (!c.shift && /ten/i.test(c.name) && median(c.ev.map(e => e.midi)) > 64) c.shift = -12; });
   const rangeTxt = c => { const r = voiceRange({ev:c.ev}); return `${fullName(r.lo + c.shift)} a ${fullName(r.hi + c.shift)}`; };
