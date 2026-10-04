@@ -228,6 +228,13 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
 .lyric .br{color:var(--violet);font-weight:700}
 #roll{cursor:grab}
 .btn.exit{width:100%;margin-top:14px;border-color:var(--line);color:var(--soft)}
+.songhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px}
+.songhead h1{flex:1;min-width:0;margin:6px 0 2px;overflow-wrap:anywhere}
+.songhead .smalls{flex-wrap:nowrap;flex:none}
+.voicebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.voicebar label{font-weight:700}
+.voicebar select{width:auto;min-width:140px;font-weight:700;color:var(--violet-strong);border-color:var(--violet)}
+.voicebar .hint{margin:0;flex-basis:100%}
 .prueba{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .sexbtns{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
 .sexbtns .small[aria-pressed="true"]{background:var(--violet);border-color:var(--violet);color:var(--on-violet)}
@@ -268,10 +275,11 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
   <!-- ============ Practicar un tema ============ -->
   <section id="vSong" hidden>
     <div class="crumbs" id="songCrumbs"></div>
-    <div class="headrow">
-      <div><h1 id="songTitle"></h1><p class="sub" id="songSub"></p></div>
+    <div class="songhead">
+      <h1 id="songTitle"></h1>
       <div class="smalls"><button class="small" type="button" id="songShare">Compartir</button><a class="small" id="songEdit" href="#">Editar</a></div>
     </div>
+    <p class="sub" id="songSub"></p>
 
     <div class="panel" id="songEmpty" hidden>
       <h2>Este tema todavía no tiene voces</h2>
@@ -280,6 +288,11 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
     </div>
 
     <div id="songBody">
+      <div class="voicebar">
+        <label for="voiceSel">Cantás</label>
+        <select id="voiceSel" data-lock></select>
+        <span class="hint" id="voiceWhy"></span>
+      </div>
       <div class="seg" id="seg" role="group" aria-label="Parte de la canción"></div>
       <canvas id="roll" role="img" aria-label="Notas de tu voz a lo largo del tiempo"></canvas>
       <p class="lyric" id="lyricLine" aria-live="off"></p>
@@ -297,6 +310,12 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
         <button class="btn secondary compact" id="stepMode" type="button" style="grid-column:1/-1">Nota por nota</button>
       </div>
       <p class="msg" id="msg" role="status">Con auriculares, el micrófono capta mejor tu voz y no las otras voces.</p>
+      <section class="panel" id="results" hidden aria-live="polite">
+        <h2>Cómo te fue</h2>
+        <p id="resHead"></p>
+        <p id="resTip"></p>
+        <div class="chips" id="chips"></div>
+      </section>
 
       <section class="panel">
         <div class="row"><label for="tempo"><strong>Velocidad</strong></label><output id="tempoOut" for="tempo"></output></div>
@@ -319,12 +338,6 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
         <p class="hint" style="margin-top:0">Con auriculares el micrófono escucha solo tu voz y la detección es más precisa. Sin auriculares, la herramienta descarta lo que viene del parlante.</p>
       </details>
 
-      <section class="panel" id="results" hidden aria-live="polite">
-        <h2>Cómo te fue</h2>
-        <p id="resHead"></p>
-        <p id="resTip"></p>
-        <div class="chips" id="chips"></div>
-      </section>
     </div>
 
     <details class="panel" id="songFiles" hidden>
@@ -434,7 +447,7 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '3.9', APP_FECHA = '2026-10-04';
+const APP_VERSION = '3.10', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -570,7 +583,6 @@ function seedSong(){
     folder:null, fifths:-1, tempo:66, mlen:Array(m - 1).fill(2), mlab:null, sections, voices:[], files:[], created:Date.now()};
   [['S','Soprano'],['A','Alto'],['T','Tenor'],['B','Bajo']].forEach(([k, n]) =>
     s.voices.push({id:uid(), name:n, ev:parseVoiceText(lines[k].join('\n'), s.mlen).ev}));
-  s.myVoice = s.voices[2].id;   // la herramienta original empezaba en Tenor
   try {
     const v = localStorage.getItem('jlc.voice'), idx = 'SATB'.indexOf(v);
     if (idx >= 0) s.myVoice = s.voices[idx].id;
@@ -1513,11 +1525,26 @@ function bestVoiceFor(song, lo, hi){
   return best;
 }
 function defaultVoice(song){
-  if (song.myVoice && song.voices.some(v => v.id === song.myVoice)) return song.myVoice;
+  const ok = v => v && v.ev.length;
+  if (song.myVoice && song.voices.some(v => v.id === song.myVoice)){ P.voiceWhy = 'elegida por vos en este tema'; return song.myVoice; }
   const pf = S.perfil;
-  if (pf && pf.tipo){ const r = refById(pf.tipo), v = song.voices.find(v => r.rx.test(v.name.trim())); if (v) return v.id; }
-  if (pf && pf.lo != null){ const v = bestVoiceFor(song, pf.lo, pf.hi); if (v) return v.id; }
-  return song.voices[0] && song.voices[0].id;
+  if (pf && pf.tipo){
+    const r = refById(pf.tipo), v = song.voices.find(v => ok(v) && r.rx.test(v.name.trim()));
+    if (v){ P.voiceWhy = `según tu voz (${r.name})`; return v.id; }
+  }
+  if (pf && pf.lo != null){ const v = bestVoiceFor(song, pf.lo, pf.hi); if (v){ P.voiceWhy = 'la que mejor te queda según tu registro'; return v.id; } }
+  const mel = song.voices.find(v => ok(v) && /sopr|melod|canto|tiple|^voz\b/i.test(v.name.trim())) || song.voices.find(ok) || song.voices[0];
+  P.voiceWhy = 'la melodía: todavía no elegiste tu voz';
+  return mel && mel.id;
+}
+function buildVoiceSel(){
+  $('#voiceSel').innerHTML = P.song.voices.map(v => `<option value="${v.id}"${v.id === P.voice ? ' selected' : ''}>${esc(v.name)}</option>`).join('');
+  $('#voiceWhy').textContent = P.voiceWhy || '';
+}
+function chooseVoice(id){
+  P.voice = id; P.song.myVoice = id; P.voiceWhy = 'elegida por vos en este tema'; save();
+  P.song.voices.forEach(v => P.vol[v.id] = v.id === P.voice ? .9 : .35); P.mute = {}; P.solo = {};
+  buildVoiceSel(); syncMixer(); refreshEvs(); resetMeter(); draw();
 }
 function typicalCount(song){
   const c = {}; song.mlen.forEach(l => c[l] = (c[l] || 0) + 1);
@@ -1542,7 +1569,7 @@ function openSong(s){
   $('#songEmpty').hidden = !!has; $('#songBody').hidden = !has;
   renderSongFiles(s);
   if (!has) return;
-  buildSeg(); setSecRange(); buildRangeOptions(); buildMixer(); syncTempo();
+  buildSeg(); setSecRange(); buildRangeOptions(); buildMixer(); buildVoiceSel(); syncTempo();
   $('#loop').checked = P.loop; $('#singGuide').checked = P.singGuide;
   setMsg(window.isSecureContext ? 'Con auriculares, el micrófono capta mejor tu voz y no las otras voces.' : micErrorText());
   if (secureLink()) msg.innerHTML = esc(msg.textContent.split(':')[0]) + ': ' + secureLink() + '.';
@@ -2238,6 +2265,7 @@ $('#phones').checked = usingPhones();
 $('#phones').addEventListener('change', e => setPhones(e.target.checked));
 $('#singGuide').addEventListener('change', e => { P.singGuide = e.target.checked; if (run) applyGains(run.mode === 'sing'); });
 
+$('#voiceSel').addEventListener('change', e => { if (!run) chooseVoice(e.target.value); });
 function buildMixer(){
   const mix = $('#mixer'); mix.innerHTML = '';
   const pf = S.perfil && S.perfil.lo != null ? S.perfil : null;
@@ -2273,11 +2301,7 @@ function syncMixer(){
   });
 }
 $('#mixer').addEventListener('change', e => {
-  if (e.target.name === 'mine' && !run){
-    P.voice = e.target.value; P.song.myVoice = P.voice; save();
-    P.song.voices.forEach(v => P.vol[v.id] = v.id === P.voice ? .9 : .35); P.mute = {}; P.solo = {};
-    syncMixer(); refreshEvs(); resetMeter(); draw();
-  }
+  if (e.target.name === 'mine' && !run) chooseVoice(e.target.value);
 });
 $('#mixer').addEventListener('input', e => {
   if (e.target.classList.contains('vol')){ P.vol[e.target.closest('.voice').dataset.v] = e.target.value / 100; applyGains(run && run.mode === 'sing'); }
