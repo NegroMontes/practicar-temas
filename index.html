@@ -411,7 +411,7 @@ footer{margin-top:26px;font-size:13px;color:var(--soft)}
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '3.2', APP_FECHA = '2026-10-04';
+const APP_VERSION = '3.3', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -1574,7 +1574,7 @@ function silentWav(){
   return 'data:audio/wav;base64,' + btoa(bin);
 }
 function unlockAudioSession(){
-  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch(e){}
+  if (!stream) setAudioSession('playback');   // con el micrófono abierto se queda en «reproducir y grabar»
   try {
     if (!silentEl){ silentEl = document.createElement('audio'); silentEl.setAttribute('playsinline', ''); silentEl.loop = true; silentEl.src = silentWav(); }
     const p = silentEl.play(); if (p && p.catch) p.catch(() => {});
@@ -1623,19 +1623,35 @@ function click(t, accent, nodes){
 
 /* ---------- Micrófono y detección de tono (YIN) ---------- */
 let stream = null, analyser = null, tbuf = null; const yin = new Float32Array(1024);
+function setAudioSession(type){ try { if (navigator.audioSession) navigator.audioSession.type = type; } catch(e){} }
 async function micStart(){
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('nomic');
-  stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}});
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ const e = new Error('nomic'); e.name = 'NoMic'; throw e; }
+  // En iPhone, el modo «solo reproducir» (para que suene aunque esté en silencio) no deja grabar
+  setAudioSession('play-and-record');
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}});
+  } catch(e){
+    if (e.name !== 'OverconstrainedError' && e.name !== 'TypeError'){ setAudioSession('playback'); throw e; }
+    stream = await navigator.mediaDevices.getUserMedia({audio:true});   // algunos teléfonos no aceptan las opciones
+  }
   const src = ac.createMediaStreamSource(stream);
   analyser = ac.createAnalyser(); analyser.fftSize = 2048; src.connect(analyser);
   tbuf = new Float32Array(analyser.fftSize);
 }
 function micStop(){
-  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (stream){ stream.getTracks().forEach(t => t.stop()); setAudioSession('playback'); }
   stream = null; analyser = null;
 }
-function micErrorText(){
-  if (window.isSecureContext) return 'No se pudo usar el micrófono. Revisá el permiso del navegador y probá de nuevo.';
+function micErrorText(e){
+  if (window.isSecureContext){
+    const n = e && e.name, ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (n === 'NotAllowedError' || n === 'SecurityError') return ios
+      ? 'El micrófono no tiene permiso. Tocá «aA» a la izquierda de la dirección › Configuración del sitio web › Micrófono › Permitir, y recargá la página. Si no aparece, revisá Configuración del iPhone › Safari › Micrófono.'
+      : 'El micrófono no tiene permiso. Tocá el candado (o el ícono) a la izquierda de la dirección › Permisos › Micrófono › Permitir, y recargá la página.';
+    if (n === 'NotFoundError' || n === 'NoMic') return 'No encontré ningún micrófono en este dispositivo.';
+    if (n === 'NotReadableError' || n === 'AbortError') return 'El micrófono está ocupado por otra app (una llamada, WhatsApp, un grabador…). Cerrala y probá de nuevo.';
+    return `No se pudo usar el micrófono${n ? ` (${n})` : ''}. Probá recargar la página; si sigue, cerrá y volvé a abrir el navegador.`;
+  }
   return INFO.https ? `Para cantar desde este dispositivo abrí la dirección segura: ${INFO.https}`
     : 'Desde este dispositivo el navegador no deja usar el micrófono: falta activar «Enable HTTPS» en Tailscale (login.tailscale.com/admin/dns) y volver a abrir el servidor.';
 }
@@ -1689,7 +1705,7 @@ async function start(mode){
   setMsg('');
   if (mode === 'sing'){
     try { await micStart(); }
-    catch(e){ setMsg(micErrorText(), true); return; }
+    catch(e){ setMsg(micErrorText(e), true); if (secureLink()) msg.innerHTML += '<br>' + secureLink(); return; }
   }
   applyGains(mode === 'sing');
   setTimeout(() => { if (run && ac && ac.state !== 'running') setMsg('El sonido está bloqueado. Revisá que el celular no esté en silencio (botón lateral) y que el volumen esté alto.', true); }, 600);
@@ -2370,7 +2386,7 @@ function vzMsg(t, err){ $('#vzMsg').textContent = t; $('#vzMsg').className = 'ms
 async function vzStart(){
   ensureAudio();
   try { await micStart(); }
-  catch(e){ vzMsg(micErrorText(), true); if (secureLink()) $('#vzMsg').innerHTML += '<br>' + secureLink(); return; }
+  catch(e){ vzMsg(micErrorText(e), true); if (secureLink()) $('#vzMsg').innerHTML += '<br>' + secureLink(); return; }
   vzMsg('');
   VZ.on = true; VZ.win = []; VZ.samples = []; VZ.t0 = performance.now();
   if (VZ.step === 'habla') VZ.f0 = null;
