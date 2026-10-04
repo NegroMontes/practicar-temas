@@ -397,6 +397,10 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
         <label class="fld" style="margin-top:6px">Sonido de las voces <select id="timbre"><option value="vocal">Cantado, con la vocal de la letra</option><option value="tono">Tono simple</option></select></label>
         <label class="switch"><input type="checkbox" id="phones" role="switch" data-lock><span>Estoy usando auriculares</span></label>
         <p class="hint" style="margin-top:0">Con auriculares el micrófono escucha solo tu voz y la detección es más precisa. Sin auriculares, la herramienta descarta lo que viene del parlante.</p>
+        <div class="row" style="margin-top:8px"><label for="delay"><strong>Retraso del audio</strong></label><output id="delayOut" for="delay"></output></div>
+        <input type="range" id="delay" min="0" max="600" step="10" data-lock aria-describedby="delayHint">
+        <div class="filebtns" style="margin-top:0"><button class="small" type="button" id="delayCal" data-lock>Calibrar</button><button class="small" type="button" id="delayZero" data-lock>Sin retraso</button></div>
+        <p class="hint" id="delayHint">Los auriculares Bluetooth hacen llegar el sonido tarde (unos 150 a 300 ms). Con «Calibrar» lo medís y el visor, la letra y la evaluación de tu canto se sincronizan con lo que escuchás. Se guarda en este dispositivo.</p>
       </details>
 
     </div>
@@ -546,7 +550,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '4.13', APP_FECHA = '2026-10-04';
+const APP_VERSION = '4.14', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -2110,7 +2114,7 @@ function evAt(local){ return run.evs.findIndex(e => local >= e.s && local < e.e)
 function tick(){
   if (!run) return;
   if (run.paused){ nextTick(); return; }   // en pausa el reloj del audio está quieto
-  const nowRel = (ac.currentTime - run.tPlay0) / run.spb;
+  const nowRel = (ac.currentTime - audioDelay() - run.tPlay0) / run.spb;   // lo que se escucha ahora (auriculares Bluetooth)
   if (P.loop && nowRel > run.scheduled * run.L - 2){ schedulePass(run.scheduled); run.scheduled++; }
   if (nowRel >= 0){
     const pass = Math.floor(nowRel / run.L);
@@ -2796,7 +2800,7 @@ function mtPlay(){
   MT.nodes.forEach(o => { try { o.stop(); } catch(e){} }); MT.nodes = [];
   if (useVowels()){ const ch = vowelChain(master, t.kind || kindOfMidi(t.midi), ac.currentTime, ac.currentTime + 1.5, MT.nodes); vowelNote(ch, t.midi, t.vowel || 'a', ac.currentTime + .05, 1.3); }
   else playNote(master, t.midi, ac.currentTime + .05, 1.2, MT.nodes);
-  MT.listenAt = performance.now() + 1400; MT.hold = 0; MT.hist = []; MT.start = MT.listenAt;
+  MT.listenAt = performance.now() + 1400 + audioDelay() * 1000; MT.hold = 0; MT.hist = []; MT.start = MT.listenAt;
   $('#mtTarget').textContent = nameOf(t.midi); $('#mtLabel').textContent = t.label || '';
   $('#mtCount').textContent = `Nota ${MT.i + 1} de ${MT.list.length} · igualadas ${MT.ok}`;
   $('#mtHold').style.width = '0%';
@@ -2944,6 +2948,49 @@ $('#loop').addEventListener('change', e => { P.loop = e.target.checked; });
 $('#editMode').addEventListener('change', e => { P.edit = e.target.checked; P.sel = null; P.addAt = null; P.pending = null; stopLyric(); updateEditBar(); draw(); });
 $('#timbre').value = useVowels() ? 'vocal' : 'tono';
 $('#timbre').addEventListener('change', e => { try { localStorage.setItem('pt.timbre', e.target.value); } catch(err){} });
+/* Retraso del audio (por dispositivo): se compensa en el visor, la letra, la cuenta y la evaluación */
+function audioDelay(){ try { return (+localStorage.getItem('pt.retraso') || 0) / 1000; } catch(e){ return 0; } }
+function setAudioDelay(ms){ ms = Math.max(0, Math.min(800, Math.round(ms))); try { localStorage.setItem('pt.retraso', ms); } catch(e){} syncDelay(); }
+function syncDelay(){ const ms = Math.round(audioDelay() * 1000); $('#delay').value = Math.min(600, ms); $('#delayOut').textContent = ms ? ms + ' ms' : 'sin retraso'; }
+syncDelay();
+$('#delay').addEventListener('input', e => setAudioDelay(+e.target.value));
+$('#delayZero').addEventListener('click', () => setAudioDelay(0));
+$('#delayCal').addEventListener('click', calibrateDelay);
+/* Calibrar: suenan clics a ritmo parejo; tocás al compás de lo que escuchás; la diferencia es el retraso */
+function calibrateDelay(){
+  ensureAudio();
+  const N = 16, spb = .9, taps = [], nodes = [];
+  let t0 = 0, done = false;
+  openDlg(`<h2>Calibrar el retraso</h2>
+    <p class="hint" style="margin-top:0">Con los auriculares puestos, tocá el botón (o la barra espaciadora) <b>justo cuando escuchás cada clic</b>. Son ${N} clics; los primeros sirven para agarrar el ritmo.</p>
+    <button class="btn primary" type="button" id="calTap" style="width:100%;min-height:96px;font-size:22px">Tocá al ritmo</button>
+    <p class="hint" id="calInfo">Preparate…</p>
+    <div class="dlgbtns"><button class="btn secondary compact" data-close type="button">Cancelar</button></div>`);
+  const info = $('#calInfo');
+  const tap = () => { if (!done && t0) taps.push(ac.currentTime); };
+  const key = e => { if (e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); e.stopPropagation(); tap(); } };
+  $('#calTap').addEventListener('pointerdown', e => { e.preventDefault(); tap(); });
+  window.addEventListener('keydown', key, true);
+  dlg.addEventListener('close', () => { done = true; window.removeEventListener('keydown', key, true); nodes.forEach(o => { try { o.stop(); } catch(e){} }); }, {once:true});
+  t0 = ac.currentTime + 1;
+  for (let i = 0; i < N; i++) click(t0 + i * spb, i % 4 === 0, nodes);
+  const iv = setInterval(() => {
+    if (done){ clearInterval(iv); return; }
+    const k = Math.floor((ac.currentTime - t0) / spb) + 1;
+    if (k > 0 && k <= N) info.textContent = `Clic ${k} de ${N}…`;
+    if (ac.currentTime > t0 + N * spb + .9){
+      clearInterval(iv); done = true;
+      // cada toque se compara con el clic más cercano (dejando de lado los primeros 4)
+      const diffs = taps.map(t => { const i = Math.floor((t - t0) / spb + .2); return {i, d:t - (t0 + i * spb)}; })
+        .filter(x => x.i >= 4 && x.i < N && x.d > -.18 && x.d < .72).map(x => x.d);
+      if (diffs.length < 5){ info.innerHTML = '<span class="errs">Hubo pocos toques para medir. Probá de nuevo tocando en cada clic.</span>'; return; }
+      const ms = median(diffs) * 1000, sp = Math.max(...diffs) - Math.min(...diffs);
+      setAudioDelay(ms);
+      info.innerHTML = `<b>Retraso medido: ${Math.round(Math.max(0, ms))} ms.</b> ${sp > .18 ? 'Los toques estuvieron algo desparejos: si querés, calibrá otra vez.' : 'Quedó guardado para este dispositivo.'}`;
+      dlg.querySelector('[data-close]').textContent = 'Listo';
+    }
+  }, 50);
+}
 $('#phones').checked = usingPhones();
 $('#phones').addEventListener('change', e => setPhones(e.target.checked));
 $('#singGuide').addEventListener('change', e => { P.singGuide = e.target.checked; if (run) applyGains(run.mode === 'sing'); });
@@ -3207,7 +3254,7 @@ function wuPlay(lead){
   WU.plan.sched(WU.t0, WU.nodes);
   wuButtons();
   const loop = () => {
-    const el = ac.currentTime - WU.t0, bar = $('#wuBar'), live = $('#wuLive');
+    const el = ac.currentTime - audioDelay() - WU.t0, bar = $('#wuBar'), live = $('#wuLive');
     if (!bar) return;
     bar.style.width = Math.max(0, Math.min(100, el / WU.dur * 100)) + '%';
     if (el >= WU.dur){ live.textContent = '¡Bien! Tocá «Siguiente».'; WU.done = true; wuButtons(); return; }
