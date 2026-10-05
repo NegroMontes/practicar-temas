@@ -319,6 +319,9 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 .prog .hint{display:block;margin:0}
 .spark{display:flex;gap:3px;align-items:flex-end;height:24px}
 .spark i{width:8px;background:var(--violet);border-radius:2px}
+#hzRoll{display:block;width:100%;height:220px;border-radius:12px;border:1px solid var(--line);background:var(--stage);margin:10px 0 4px}
+.harmline{grid-column:1/-1;margin:0;font-size:14px;color:var(--soft);min-height:20px}
+.harmline.ok b{color:var(--ok)}
 </style>
 </head>
 <body>
@@ -411,6 +414,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
         <div class="gauge" aria-hidden="true"><div class="zone"></div><div class="mid"></div><div class="dot" id="dot"></div><span class="gl">bajo</span><span class="gr">alto</span></div>
         <div class="level" id="lvlBox" hidden><span class="lab">Micrófono</span><div class="lvltrack"><div class="lvlbar" id="lvl"></div></div></div>
         <p class="verdict" id="verdict">Tocá Escuchar o Cantar para empezar.</p>
+        <p class="harmline" id="harmNow" hidden aria-live="off"></p>
       </section>
       <div class="actions">
         <button class="btn secondary" id="listen" type="button">Escuchar</button>
@@ -574,6 +578,21 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
           <button class="choice" type="button" data-tr="larga"><strong>Nota larga</strong><span>Sostené una nota 6 segundos: mide tu afinación y tu estabilidad.</span></button>
         </div>
       </section>
+      <section class="panel" id="armPanel">
+        <h2>Armonizar</h2>
+        <p class="hint" style="margin-top:0">Cantar una nota distinta de la que suena, sin que te lleve. <b>Usá auriculares</b>: sin ellos el micrófono escucha las dos voces mezcladas y se confunde.</p>
+        <label class="switch"><input type="checkbox" id="armGuide"><span>Con mi voz de guía, bajito (más fácil)</span></label>
+        <div class="trgrid">
+          <button class="choice" type="button" data-arm="sost"><strong>1 · Sostener contra una nota</strong><span>Suena una nota larga y cantás otra a una 3ª, 4ª, 5ª o 6ª, sin que te arrastre.</span></button>
+          <button class="choice" type="button" data-arm="abajo"><strong>2 · Terceras abajo</strong><span>Suena una melodía y la cantás una 3ª más abajo: la segunda voz más común.</span></button>
+          <button class="choice" type="button" data-arm="arriba"><strong>Terceras arriba</strong><span>Lo mismo, una 3ª por encima de la melodía.</span></button>
+          <button class="choice" type="button" data-arm="acorde"><strong>3 · Completar el acorde</strong><span>Suenan dos notas de un acorde y cantás la que falta.</span></button>
+          <button class="choice" type="button" data-arm="voz"><strong>4 · Segunda voz</strong><span>Suena una melodía con su bajo y cantás una voz por debajo, en 3ª y 6ª.</span></button>
+        </div>
+        <h3>5 · Con tus temas</h3>
+        <p class="hint" style="margin-top:0">Elegí un tema con varias voces y cantá la tuya: debajo de la afinación aparece qué intervalo estás formando con la otra voz y si es el que corresponde.</p>
+        <div id="armTemas"></div>
+      </section>
       <section class="panel">
         <h2>Solo escuchando</h2>
         <p class="hint" style="margin-top:0">Para entrenar el oído sin cantar: no usa el micrófono.</p>
@@ -682,7 +701,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '5.0', APP_FECHA = '2026-10-04';
+const APP_VERSION = '5.1', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -2388,6 +2407,7 @@ function frame(now){
     }
   }
   meter(folded, cents, ev);
+  harmLine(folded, cents, ev);
 }
 function listenMeter(){
   const idx = run.nowRel >= 0 ? evAt(run.local) : -1;
@@ -2451,6 +2471,7 @@ function breathCue(){
   }
 }
 function resetMeter(){
+  $('#harmNow').hidden = true;
   setText(el.sung, '–'); setText(el.target, '–'); el.dot.style.opacity = 0;
   setText(el.verdict, P.summary ? 'Listo. Mirá cómo te fue más abajo.' : 'Tocá Escuchar o Cantar para empezar.'); el.verdict.className = 'verdict';
 }
@@ -3288,7 +3309,7 @@ $('#pause').addEventListener('click', () => {
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden){
-    vzStop(); afStop(); if (MT.on || SU.on) dlg.close();
+    vzStop(); afStop(); if (MT.on || SU.on || HZ.on) dlg.close();
     if (TS.on){ tsStop(); tsMsg('La grabación se detuvo porque saliste de la pestaña.', true); }
   }
   else if (ac && ac.state !== 'running' && !WU.paused && !(run && run.paused)) ac.resume();   // iOS puede haber pausado el sonido
@@ -3872,7 +3893,7 @@ function vozRoute(sec){
   if (sec === ''){ $('#vzSecHome').hidden = false; vzHomeRender(); }
   else if (sec === 'prueba'){ WU.mode = 'test'; $('#vzSecPrueba').hidden = false; renderPrueba(); }
   else if (sec === 'calentar'){ WU.mode = 'solo'; $('#vzSecCalentar').hidden = false; wuRender(); }
-  else if (sec === 'entrenar'){ $('#vzSecEntrenar').hidden = false; trProgRender(); }
+  else if (sec === 'entrenar'){ $('#vzSecEntrenar').hidden = false; trProgRender(); armRender(); }
   else if (sec === 'afinador'){ $('#vzSecAfinador').hidden = false; afRender(); }
   else if (sec === 'transcribir'){ $('#vzSecTranscribir').hidden = false; tsRender(); }
 }
@@ -3880,6 +3901,7 @@ function vozRoute(sec){
 /* ---------- Registro de práctica: racha, «para hoy» y progreso ---------- */
 const isoDay = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const TRN = [['igualar', 'Igualar notas'], ['intervalos', 'Cantar intervalos'], ['escala', 'Escalas sin guía'], ['arpegio', 'Arpegios'], ['larga', 'Nota larga'],
+  ['arm-sost', 'Sostener contra una nota'], ['arm-3as', 'Terceras'], ['arm-acorde', 'Completar el acorde'], ['arm-voz', 'Segunda voz'],
   ['q-dir', '¿Sube o baja?'], ['q-acorde', '¿Mayor o menor?'], ['q-int', '¿Qué intervalo es?']];
 const TRAIN_KEYS = TRN.map(x => x[0]);
 function practiceLog(){ return (S.perfil && S.perfil.log) || []; }
@@ -4541,7 +4563,308 @@ $('#tsSave').addEventListener('click', () => {
 });
 window.addEventListener('resize', () => { if (curView === 'voz' && VZ.sec === 'transcribir') tsDraw(); if (curView === 'voz' && VZ.sec === 'afinador' && !AF.on) afDraw(performance.now()); });
 
-if (/[?&]prueba\b/.test(location.search)) window.PT = {parseMscx, parseMusicXML, msczToMscx, readMuseScoreFile, mxlToXml, TS, tsSegment, tsQuantize, tsAfterEdit, tsButtons, AF, afDraw};   // solo para probar
+/* ---------- Armonizar ----------
+   Cada ejercicio: acc (lo que suena: {beat, dur, midi, v = línea, g = suave}), tg (lo que cantás: {beat, dur, midi, label}),
+   tempo, pre (acorde de la tonalidad durante la cuenta). El motor hace sonar todo, escucha tu voz y evalúa cada nota. */
+const SCALE_MAJ = [0, 2, 4, 5, 7, 9, 11];
+const degMidi = (ton, d) => ton + SCALE_MAJ[((d % 7) + 7) % 7] + 12 * Math.floor(d / 7);
+const shuffle = a => a.map(x => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map(p => p[1]);
+const ivTxt = d => {
+  const a = Math.abs(d), base = a % 12, oct = Math.floor(a / 12);
+  const t = a === 0 ? 'unísono' : base === 0 ? (oct > 1 ? `${oct} octavas` : 'octava') : INT_NAME[base] + (oct ? ' (+ octava)' : '');
+  return d === 0 ? t : `${t} ${d > 0 ? 'arriba' : 'abajo'}`;
+};
+function genDrone(){
+  const [lo, hi] = trainRange(10);
+  const pool = [[7, '5ª justa arriba'], [-7, '5ª justa abajo'], [4, '3ª mayor arriba'], [-4, '3ª mayor abajo'], [3, '3ª menor arriba'], [-3, '3ª menor abajo'],
+    [9, '6ª mayor arriba'], [-9, '6ª mayor abajo'], [5, '4ª justa arriba'], [-5, '4ª justa abajo']];
+  const acc = [], tg = []; let b = 0;
+  shuffle(pool).slice(0, 4).forEach(([iv, name]) => {
+    const t = randIn(lo + 1, hi - 1);
+    acc.push({beat:b, dur:6, midi:t - iv});
+    tg.push({beat:b + 1.5, dur:4.5, midi:t, label:`${name} de la que suena`});
+    b += 7;
+  });
+  return {title:'Sostener contra una nota', tempo:60, acc, tg,
+    intro:'Suena una nota larga. Cuando empieza tu barra, cantá la otra nota del intervalo y sostenela firme, sin dejar que te lleve la que suena.'};
+}
+function genThirds(up){
+  const [lo, hi] = trainRange(10), ton = randIn(lo + 2, Math.max(lo + 2, hi - 9));
+  const ok = d => d >= -1 && d <= 5 && degMidi(ton, d) >= lo && degMidi(ton, d) <= hi;
+  let d = up ? 2 : pick([2, 4]); const degs = [d];
+  for (let i = 0; i < 6; i++){ let st = pick([1, -1, 1, -1, 2, -2]); if (!ok(d + st)) st = -st; if (!ok(d + st)) st = 0; d += st; degs.push(d); }
+  degs.push(up ? 2 : 0);
+  const acc = [], tg = []; let b = 0;
+  degs.forEach((g, i) => {
+    const dur = i === degs.length - 1 ? 3 : pick([1, 1, 1, 2]);
+    tg.push({beat:b, dur, midi:degMidi(ton, g), label:`una 3ª ${up ? 'arriba' : 'abajo'} de la melodía`});
+    acc.push({beat:b, dur, midi:degMidi(ton, g + (up ? -2 : 2))});
+    b += dur;
+  });
+  return {title:up ? 'Terceras arriba' : 'Terceras abajo', sub:`En ${ES[pcOf(ton)]} mayor.`, tempo:72, pre:[ton, ton + 4, ton + 7], acc, tg,
+    intro:`Suena una melodía y vos cantás la misma melodía una 3ª más ${up ? 'arriba' : 'abajo'}: se mueve igual, pero en otras notas. Durante la cuenta suena el acorde de la tonalidad.`};
+}
+function genChord(){
+  const [lo, hi] = trainRange(10), ton = randIn(lo, hi - 5), ROLE = ['fundamental', '3ª', '5ª'];
+  const roots = [0, pick([5, 3]), pick([3, 1]), 4, 0];
+  const acc = [], tg = []; let prev = Math.round((lo + hi) / 2), b = 0;
+  roots.forEach(r => {
+    const tones = [r, r + 2, r + 4].map(d => degMidi(ton, d)), pcs = tones.map(pcOf), maj = ((tones[1] - tones[0]) % 12 + 12) % 12 === 4;
+    const miss = randIn(0, 2);
+    let t = null; for (let m = lo; m <= hi; m++) if (pcOf(m) === pcs[miss] && (t == null || Math.abs(m - prev) < Math.abs(t - prev))) t = m;
+    prev = t; let v = 0;
+    pcs.forEach((pc, k) => {
+      if (k === miss) return;
+      let best = null; for (let m = t - 9; m <= t + 9; m++) if (m !== t && pcOf(m) === pc && (best == null || Math.abs(m - t) < Math.abs(best - t))) best = m;
+      acc.push({beat:b, dur:4, midi:best, v:v++});
+    });
+    tg.push({beat:b + 1, dur:3, midi:t, label:`la ${ROLE[miss]} de ${ES[pcs[0]]} ${maj ? 'mayor' : 'menor'}`});
+    b += 4;
+  });
+  return {title:'Completar el acorde', sub:`En ${ES[pcOf(ton)]} mayor.`, tempo:66, pre:[ton, ton + 4, ton + 7], acc, tg,
+    intro:'Suenan dos notas de un acorde; desde el segundo tiempo cantá la que falta. Con las tres, el acorde suena lleno y quieto: si algo «roza», no es esa nota.'};
+}
+const PROGS = [[0, 5, 3, 4, 0, 3, 4, 0], [0, 3, 4, 0, 5, 1, 4, 0], [0, 4, 5, 3, 0, 1, 4, 0], [0, 3, 0, 4, 5, 3, 4, 0]];
+function genSecond(){
+  const [lo, hi] = trainRange(10), ton = randIn(lo, hi - 4), prog = pick(PROGS);
+  const acc = [], tg = []; let pt = Math.round((lo + hi) / 2) - 1, pm = null, b = 0;
+  prog.forEach((r, i) => {
+    const pcs = [r, r + 2, r + 4].map(d => pcOf(degMidi(ton, d))), last = i === prog.length - 1, dur = last ? 3 : 2;
+    // tu nota y la de la melodía se eligen juntas: movimiento suave y, casi siempre, a una 3ª o una 6ª
+    let t = null, mel = null, best = Infinity;
+    for (let m = lo; m <= hi; m++){
+      if (!pcs.includes(pcOf(m))) continue;
+      for (let u = m + 3; u <= m + 9; u++){
+        if (!pcs.includes(pcOf(u))) continue;
+        const sc = Math.abs(m - pt) + (m === pt ? .5 : 0) + .7 * (pm == null ? Math.abs(u - (m + 4)) : Math.abs(u - pm))
+          + ([3, 4, 8, 9].includes(u - m) ? 0 : 4) + (last ? (pcOf(u) !== pcs[0] ? 3 : 0) + (pcOf(m) === pcs[2] ? 3 : 0) : 0);
+        if (sc < best){ best = sc; t = m; mel = u; }
+      }
+    }
+    let bass = t - 5; while (pcOf(bass) !== pcs[0]) bass--;
+    while (bass < 33) bass += 12;
+    acc.push({beat:b, dur, midi:mel, v:0}, {beat:b, dur, midi:bass, v:1, g:1});
+    tg.push({beat:b, dur, midi:t, label:`${ivTxt(t - mel)} de la melodía`});
+    pt = t; pm = mel; b += dur;
+  });
+  return {title:'Segunda voz', sub:`En ${ES[pcOf(ton)]} mayor.`, tempo:72, pre:[ton, ton + 4, ton + 7], acc, tg,
+    intro:'Suena una melodía arriba, con su bajo. Vos cantás la segunda voz, por debajo de la melodía: casi siempre a una 3ª o a una 6ª de ella.'};
+}
+function armGuide(){ try { return localStorage.getItem('pt.armGuia') !== '0'; } catch(e){ return true; } }
+function armRender(){
+  $('#armGuide').checked = armGuide();
+  const ss = S.songs.filter(s => !s.deleted && s.voices.filter(v => v.ev.length).length >= 2);
+  $('#armTemas').innerHTML = ss.length ? `<div class="wulist">${ss.map(s => `<a class="small" href="#/tema/${s.id}">${esc(s.title)}</a>`).join('')}</div>`
+    : '<p class="hint" style="margin-top:0">Todavía no tenés temas con varias voces. Cargá una partitura en Temas.</p>';
+}
+$('#armGuide').addEventListener('change', e => { try { localStorage.setItem('pt.armGuia', e.target.checked ? '1' : '0'); } catch(x){} });
+$('#armPanel').addEventListener('click', e => {
+  const b = e.target.closest('[data-arm]'); if (!b) return;
+  vzStop();
+  const k = b.dataset.arm, gen = {sost:genDrone, abajo:() => genThirds(false), arriba:() => genThirds(true), acorde:genChord, voz:genSecond}[k];
+  harmonyDialog(gen, k === 'sost' ? 'arm-sost' : k === 'abajo' || k === 'arriba' ? 'arm-3as' : 'arm-' + k);
+});
+
+const HZ = {on:false, demo:false, ex:null, gen:null, key:null, raf:0, nodes:[], gains:[], t0:0, spb:1, hist:[], lastV:0, last:0, acc:[], trace:[], status:null, end:0};
+function playLines(dest, notes, t0, spb, nodes){   // cada línea (v) con su propia voz cantada
+  const lines = {}; notes.forEach(n => (lines[n.v || 0] = lines[n.v || 0] || []).push(n));
+  Object.values(lines).forEach(ln => {
+    if (useVowels()){
+      const st = Math.min(...ln.map(n => n.beat)), en = Math.max(...ln.map(n => n.beat + n.dur));
+      const ch = vowelChain(dest, kindOfMidi(median(ln.map(n => n.midi))), t0 + st * spb - .05, t0 + en * spb + .4, nodes);
+      ln.forEach(n => vowelNote(ch, n.midi, 'a', t0 + n.beat * spb, n.dur * spb, false));
+    } else ln.forEach(n => playNote(dest, n.midi, t0 + n.beat * spb, n.dur * spb, nodes));
+  });
+}
+function hzSchedule(t0, spb, guideGain, preLen){
+  const ex = HZ.ex, mk = g => { const n = ac.createGain(); n.gain.value = g; n.connect(master); HZ.gains.push(n); return n; };
+  const full = mk(.9), soft = mk(.45);
+  if (ex.pre && preLen) ex.pre.forEach(m => playNote(soft, m, t0 - preLen, preLen - .15, HZ.nodes));
+  playLines(full, ex.acc.filter(n => !n.g), t0, spb, HZ.nodes);
+  playLines(soft, ex.acc.filter(n => n.g), t0, spb, HZ.nodes);
+  if (guideGain > 0) playLines(mk(guideGain), ex.tg.map(n => ({...n, v:9})), t0, spb, HZ.nodes);
+}
+function hzEnd(){ const ex = HZ.ex; return Math.max(...ex.tg.map(n => n.beat + n.dur), ...ex.acc.map(n => n.beat + n.dur)); }
+function harmonyDialog(gen, key){
+  ensureAudio();
+  Object.assign(HZ, {gen, key, ex:gen(), status:null, trace:[]});
+  openDlg(`<h2 id="hzTitle"></h2>
+    <p class="hint" style="margin-top:0" id="hzIntro"></p>
+    <canvas id="hzRoll" role="img" aria-label="Las notas del ejercicio: en gris lo que suena, en violeta lo que cantás"></canvas>
+    <p class="hint" style="margin-top:0">Gris: lo que suena · violeta: lo que cantás · línea: tu voz.</p>
+    <div class="vzgrid"><div class="cell"><span class="lab">Cantá</span><span class="big" id="hzTarget">–</span><span class="hint" id="hzLabel" style="margin:0"></span></div>
+      <div class="cell"><span class="lab">Tu voz</span><span class="big" id="hzSung">–</span></div></div>
+    <div class="gauge" aria-hidden="true"><div class="zone"></div><div class="mid"></div><div class="dot" id="hzDot"></div><span class="gl">bajo</span><span class="gr">alto</span></div>
+    <p class="verdict" id="hzV" style="margin-top:6px"></p>
+    <p class="hint" id="hzRes" style="margin-top:2px"></p>
+    <div class="level"><span class="lab">Micrófono</span><div class="lvltrack"><div class="lvlbar" id="hzLvl"></div></div></div>
+    <label class="switch"><input type="checkbox" id="hzGuide"><span>Con mi voz de guía, bajito</span></label>
+    <div class="dlgbtns"><button class="small" type="button" id="hzDemo">Escuchar cómo suena</button><button class="small" type="button" id="hzNew">Otro ejercicio</button>
+      <button class="btn primary compact" type="button" id="hzGo">Cantar</button><button class="btn secondary compact" data-close type="button">Cerrar</button></div>`);
+  $('#hzGuide').checked = armGuide();
+  dlg.addEventListener('close', () => hzStop(false), {once:true});
+  $('#hzDemo').addEventListener('click', hzDemo);
+  $('#hzNew').addEventListener('click', () => { hzStop(false); HZ.ex = HZ.gen(); HZ.status = null; HZ.trace = []; hzShow(); });
+  $('#hzGo').addEventListener('click', () => HZ.on ? hzStop(false) : hzSing());
+  hzShow();
+}
+function hzShow(){
+  const ex = HZ.ex;
+  $('#hzTitle').textContent = ex.title;
+  $('#hzIntro').textContent = (ex.sub ? ex.sub + ' ' : '') + ex.intro;
+  $('#hzTarget').textContent = nameOf(ex.tg[0].midi); $('#hzLabel').textContent = ex.tg[0].label;
+  $('#hzSung').textContent = '–'; $('#hzDot').style.opacity = 0;
+  $('#hzV').textContent = ''; $('#hzV').className = 'verdict'; $('#hzRes').textContent = '';
+  hzButtons(); hzDraw(null);
+}
+function hzButtons(){
+  const g = $('#hzGo'); if (!g) return;
+  g.textContent = HZ.on ? 'Detener' : HZ.status ? 'Cantar de nuevo' : 'Cantar';
+  g.className = 'btn compact ' + (HZ.on ? 'stop' : 'primary');
+  $('#hzDemo').disabled = HZ.on; $('#hzNew').disabled = HZ.on;
+  $('#hzDemo').textContent = HZ.demo ? '■ Detener' : 'Escuchar cómo suena';
+}
+function hzStopSound(){
+  HZ.nodes.forEach(o => { try { o.stop(); } catch(e){} }); HZ.nodes = [];
+  HZ.gains.forEach(g => { try { g.disconnect(); } catch(e){} }); HZ.gains = [];
+  if (HZ.demo){ HZ.demo = false; cancelAnimationFrame(HZ.raf); hzButtons(); hzDraw(null); }
+}
+function hzDemo(){
+  if (HZ.on) return;
+  if (HZ.demo){ hzStopSound(); return; }
+  ensureAudio(); hzStopSound();
+  const ex = HZ.ex, spb = 60 / ex.tempo, pre = ex.pre ? 1.6 : 0, t0 = ac.currentTime + .3 + pre, end = hzEnd();
+  hzSchedule(t0, spb, 1, pre);
+  HZ.demo = true; hzButtons();
+  const loop = () => {
+    if (!HZ.demo) return;
+    const b = (ac.currentTime - audioDelay() - t0) / spb; hzDraw(b);
+    if (b > end + .3){ hzStopSound(); return; }
+    HZ.raf = requestAnimationFrame(loop);
+  };
+  HZ.raf = requestAnimationFrame(loop);
+}
+async function hzSing(){
+  hzStopSound();
+  try { await micStart(); }
+  catch(e){ $('#hzV').textContent = micErrorText(e); $('#hzV').className = 'verdict bad'; return; }
+  try { localStorage.setItem('pt.armGuia', $('#hzGuide').checked ? '1' : '0'); } catch(e){}
+  const ex = HZ.ex, spb = 60 / ex.tempo, count = 4, t0 = ac.currentTime + .25 + count * spb;
+  for (let i = 0; i < count; i++) click(t0 - (count - i) * spb, i === 0, HZ.nodes);
+  hzSchedule(t0, spb, $('#hzGuide').checked ? .3 : 0, count * spb);
+  Object.assign(HZ, {on:true, t0, spb, end:hzEnd(), hist:[], trace:[], status:null, last:0, lastV:0,
+    acc:ex.tg.map(() => ({total:0, good:0, sum:0, n:0, drag:0}))});
+  $('#hzRes').textContent = ''; hzButtons();
+  HZ.raf = requestAnimationFrame(hzTick);
+}
+function hzTick(now){
+  if (!HZ.on) return;
+  const b = (ac.currentTime - audioDelay() - HZ.t0) / HZ.spb, ex = HZ.ex;
+  if (now - HZ.last >= 30 && analyser){
+    HZ.last = now;
+    const f = detect(); showLevel('hzLvl');
+    if (f){ HZ.hist.push(hzToMidi(f)); if (HZ.hist.length > 3) HZ.hist.shift(); HZ.lastV = now; }
+    else if (now - HZ.lastV > 160) HZ.hist.length = 0;
+    const i = ex.tg.findIndex(n => b >= n.beat && b < n.beat + n.dur), tg = ex.tg[i], nx = tg || ex.tg.find(n => n.beat > b);
+    setText($('#hzTarget'), nx ? nameOf(nx.midi) : '–'); setText($('#hzLabel'), nx ? nx.label : '');
+    const v = $('#hzV'), dot = $('#hzDot');
+    if (b < 0){ setText(v, `Empieza en ${Math.ceil(-b)}…`); v.className = 'verdict'; }
+    else if (!tg){ setText(v, nx ? 'Preparate…' : ''); v.className = 'verdict'; }
+    if (HZ.hist.length && tg){
+      const raw = median(HZ.hist), m = fold(raw, tg.midi), c = (m - tg.midi) * 100;
+      setText($('#hzSung'), nameOf(m));
+      dot.style.opacity = 1; dot.style.left = (50 + Math.max(-100, Math.min(100, c)) / 2) + '%';
+      const ok = Math.abs(c) <= 35;
+      dot.style.background = ok ? 'var(--ok)' : 'var(--warn)';
+      setText(v, ok ? 'Afinado, sostenela' : Math.abs(c) > 100 ? (c > 0 ? `Bajá hasta el ${nameOf(tg.midi)}` : `Subí hasta el ${nameOf(tg.midi)}`) : c > 0 ? 'Un poco alto' : 'Un poco bajo');
+      v.className = 'verdict ' + (ok ? 'ok' : Math.abs(c) > 100 ? 'bad' : 'warn');
+      HZ.trace.push({b, m});
+      if (b >= tg.beat + Math.min(tg.dur * .25, .5)){
+        const a = HZ.acc[i]; a.total++; a.n++; a.sum += c; if (ok) a.good++;
+        // ¿te llevó la otra voz? (cantaste una de las notas que suenan)
+        if (Math.abs(c) > 60 && ex.acc.some(x => b >= x.beat && b < x.beat + x.dur && pcDist(raw, x.midi) < .5)) a.drag++;
+      }
+    } else {
+      if (!HZ.hist.length){ setText($('#hzSung'), '–'); dot.style.opacity = 0; if (tg && b >= 0){ setText(v, 'Cantá tu nota'); v.className = 'verdict'; } }
+      if (tg && b >= tg.beat + Math.min(tg.dur * .25, .5)) HZ.acc[i].total++;
+    }
+    hzDraw(b);
+  }
+  if (b > HZ.end + .3){ hzStop(true); return; }
+  HZ.raf = requestAnimationFrame(hzTick);
+}
+function hzStop(done){
+  if (!HZ.on){ hzStopSound(); return; }
+  HZ.on = false; cancelAnimationFrame(HZ.raf); hzStopSound(); micStop();
+  if (!$('#hzGo')) return;
+  $('#hzLvl').style.width = '0%';
+  if (done) hzFinish(); else { $('#hzV').textContent = ''; hzDraw(null); }
+  hzButtons();
+}
+function hzFinish(){
+  const st = [], scs = []; let tot = 0, drag = 0, sum = 0, n = 0;
+  HZ.acc.forEach(a => { const sc = a.total ? a.good / a.total : 0; scs.push(sc); st.push(sc >= .6 ? 'good' : sc >= .3 ? 'partial' : 'miss'); tot += a.total; drag += a.drag; sum += a.sum; n += a.n; });
+  HZ.status = st;
+  const good = st.filter(x => x === 'good').length, score = scs.reduce((a, b) => a + b, 0) / scs.length, guide = $('#hzGuide').checked;
+  logPractice(HZ.key, score);
+  const tips = [];
+  if (n < tot * .25) tips.push('Casi no te escuché: acercate al micrófono y usá auriculares.');
+  else {
+    if (drag > n * .2) tips.push('La otra voz te arrastró: varias veces cantaste su nota en vez de la tuya. Activá la guía, o tapate un oído con la mano para escucharte mejor.');
+    const bias = sum / n;
+    if (bias > 20) tips.push('Tendés a quedar un poco alto.'); else if (bias < -20) tips.push('Tendés a quedar un poco bajo.');
+    if (score >= .8) tips.push(guide ? '¡Muy bien! Probalo ahora sin tu voz de guía.' : '¡Excelente! Probá «Otro ejercicio» o el siguiente nivel.');
+    else if (score < .4 && !guide) tips.push('Activá «Con mi voz de guía» hasta que te salga, y después sacala.');
+  }
+  const v = $('#hzV'); v.textContent = `${good} de ${st.length} notas afinadas`; v.className = 'verdict ' + (score >= .7 ? 'ok' : score >= .4 ? 'warn' : 'bad');
+  $('#hzRes').textContent = tips.join(' ');
+  $('#hzSung').textContent = '–'; $('#hzDot').style.opacity = 0;
+  hzDraw(null);
+}
+function hzDraw(b){
+  const cv = $('#hzRoll'); if (!cv || !cv.clientWidth || !HZ.ex) return;
+  const ex = HZ.ex, W = cv.clientWidth, H = cv.clientHeight || 170, c = fitCanvas(cv, W, H, false);
+  const all = [...ex.acc, ...ex.tg], end = Math.max(...all.map(n => n.beat + n.dur));
+  const lo = Math.min(...all.map(n => n.midi)) - 1, hi = Math.max(...all.map(n => n.midi)) + 1;
+  const rh = (H - 8) / (hi - lo + 1), y = m => 4 + (hi - m) * rh, x = bb => 8 + bb / end * (W - 16);
+  c.fillStyle = C.stage; c.fillRect(0, 0, W, H);
+  for (let m = lo; m <= hi; m++) if (isBlack(m)){ c.globalAlpha = .4; c.fillStyle = C.grid; c.fillRect(0, y(m), W, rh); c.globalAlpha = 1; }
+  ex.acc.forEach(n => { c.globalAlpha = n.g ? .3 : .55; c.fillStyle = C.soft; rrx(c, x(n.beat) + 1, y(n.midi) + 1, Math.max(3, x(n.beat + n.dur) - x(n.beat) - 2), Math.max(3, rh - 2), 4); c.fill(); });
+  c.globalAlpha = 1; c.textBaseline = 'middle';
+  ex.tg.forEach((n, i) => {
+    const s = HZ.status && HZ.status[i], X = x(n.beat) + 1, w = Math.max(3, x(n.beat + n.dur) - x(n.beat) - 2), Y = y(n.midi) + 1, h = Math.max(3, rh - 2);
+    c.fillStyle = s ? (s === 'good' ? C.ok : s === 'partial' ? C.warn : C.bad) : C.violet; c.globalAlpha = s ? .9 : .3; rrx(c, X, Y, w, h, 4); c.fill();
+    c.globalAlpha = 1; c.strokeStyle = C.violet; c.lineWidth = 2; rrx(c, X, Y, w, h, 4); c.stroke();
+    if (w > 26 && h >= 10){ c.fillStyle = s ? C.stage : C.ink; c.font = `700 ${Math.min(12, Math.floor(h - 1))}px ${CFONT}`; c.fillText(nameOf(n.midi), X + 5, Y + h / 2 + .5); }
+  });
+  if (HZ.trace.length){
+    c.strokeStyle = C.ink; c.globalAlpha = .85; c.lineWidth = 2; c.lineJoin = 'round'; c.beginPath();
+    let pb = null; HZ.trace.forEach(p => { const X = x(p.b), Y = y(p.m) + rh / 2; if (pb != null && p.b - pb < .25) c.lineTo(X, Y); else c.moveTo(X, Y); pb = p.b; });
+    c.stroke(); c.globalAlpha = 1;
+  }
+  if (b != null && b >= 0 && b <= end){ c.strokeStyle = C.violet; c.lineWidth = 2; c.beginPath(); c.moveTo(x(b), 0); c.lineTo(x(b), H); c.stroke(); }
+}
+
+/* En los temas: qué intervalo formás con la otra voz mientras cantás */
+function harmRef(local){   // la voz de referencia: la más aguda de las otras (o la más grave, si la tuya es la más aguda)
+  const mine = P.song.voices.find(v => v.id === P.voice); if (!mine) return null;
+  const others = P.song.voices.filter(v => v.id !== P.voice).map(v => ({v, e:v.ev.find(e => local >= e.beat && local < e.beat + e.dur)})).filter(x => x.e);
+  if (!others.length) return null;
+  const my = mine.ev.find(e => local >= e.beat && local < e.beat + e.dur);
+  const top = others.reduce((a, b) => b.e.midi > a.e.midi ? b : a), bot = others.reduce((a, b) => b.e.midi < a.e.midi ? b : a);
+  return my && my.midi >= top.e.midi ? bot : top;
+}
+function harmLine(folded, cents, ev){
+  const box = $('#harmNow'); if (!box) return;
+  if (!run || run.mode !== 'sing' || run.nowRel < 0 || folded == null || !ev || P.song.voices.length < 2){ box.hidden = true; return; }
+  const r = harmRef(run.local); if (!r){ box.hidden = true; return; }
+  const ok = Math.abs(cents) <= 50, sung = Math.round(ev.midi + cents / 100);
+  box.hidden = false; box.className = 'harmline' + (ok ? ' ok' : '');
+  const t = `Con ${esc(r.v.name)}: <b>${ivTxt(sung - r.e.midi)}</b>${ok ? ' ✓' : ` · tiene que ser ${ivTxt(ev.midi - r.e.midi)}`}`;
+  if (box.innerHTML !== t) box.innerHTML = t;
+}
+
+if (/[?&]prueba\b/.test(location.search)) window.PT = {parseMscx, parseMusicXML, msczToMscx, readMuseScoreFile, mxlToXml, HZ, genDrone, genThirds, genChord, genSecond, hzDraw, hzFinish, TS, tsSegment, tsQuantize, tsAfterEdit, tsButtons, AF, afDraw};   // solo para probar
 
 /* ---------- Inicio ---------- */
 (async () => {
