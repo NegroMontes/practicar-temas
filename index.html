@@ -419,7 +419,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
     <div id="songBody" class="songgrid">
      <div class="songmain">
       <div class="voicebar">
-        <label for="voiceSel">Cantás</label>
+        <label for="voiceSel">Ver</label>
         <select id="voiceSel" data-lock></select>
         <span class="hint" id="voiceWhy"></span>
       </div>
@@ -762,7 +762,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '5.3', APP_FECHA = '2026-10-04';
+const APP_VERSION = '5.4', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -989,6 +989,11 @@ const ftype = name => /\.(mscz|mscx)$/i.test(name) ? 'mscz' : /\.(musicxml|xml|m
   : /\.pdf$/i.test(name) ? 'pdf' : /\.(png|jpe?g|gif|webp|heic)$/i.test(name) ? 'img' : 'otro';
 const isScore = t => t === 'xml' || t === 'midi' || t === 'mscz';
 const TYPE_LABEL = {mscz:'MuseScore', xml:'MusicXML', midi:'MIDI', pdf:'PDF', img:'Imagen', otro:'Archivo'};
+function viewRange(){   // con «Todas las voces» el visor abarca todas
+  if (!(viewAll() && P.song.voices.length > 1)) return voiceRange(curVoice());
+  const rs = P.song.voices.filter(v => v.ev.length).map(voiceRange);
+  return rs.length ? {lo:Math.min(...rs.map(r => r.lo)), hi:Math.max(...rs.map(r => r.hi))} : voiceRange(curVoice());
+}
 function voiceRange(v){
   if (!v || !v.ev.length) return {lo:55, hi:67};
   let lo = 999, hi = 0; v.ev.forEach(e => { lo = Math.min(lo, e.midi); hi = Math.max(hi, e.midi); });
@@ -1925,9 +1930,17 @@ function defaultVoice(song){
   P.voiceWhy = 'la melodía: todavía no elegiste tu voz';
   return mel && mel.id;
 }
+/* «Ver»: una voz (la que cantás) o todas juntas, con la tuya resaltada */
+function viewAll(){ try { return localStorage.getItem('pt.verTodas') === '1'; } catch(e){ return false; } }
+function voiceColor(v, i){ const r = REF.find(r => r.rx.test(v.name.trim())); return r ? `var(--v${r.id})` : ['var(--vS)', 'var(--vA)', 'var(--vT)', 'var(--vB)'][i % 4]; }
 function buildVoiceSel(){
-  $('#voiceSel').innerHTML = P.song.voices.map(v => `<option value="${v.id}"${v.id === P.voice ? ' selected' : ''}>${esc(v.name)}</option>`).join('');
-  $('#voiceWhy').textContent = P.voiceWhy || '';
+  const all = viewAll() && P.song.voices.length > 1;
+  $('#voiceSel').innerHTML = (P.song.voices.length > 1 ? `<option value="__todas"${all ? ' selected' : ''}>Todas las voces</option>` : '')
+    + P.song.voices.map(v => `<option value="${v.id}"${!all && v.id === P.voice ? ' selected' : ''}>${esc(v.name)}</option>`).join('');
+  const me = curVoice();
+  $('#voiceWhy').innerHTML = all && me
+    ? `Resaltada: <b>${esc(me.name)}</b>, tu voz (se cambia en «Voces y volumen») · ` + P.song.voices.filter(v => v.id !== me.id).map(v => `<span style="color:${voiceColor(v, P.song.voices.indexOf(v))};font-weight:700">■ ${esc(v.name)}</span>`).join(' ')
+    : esc(P.voiceWhy || '');
 }
 function chooseVoice(id){
   P.sel = null; P.addAt = null; P.undo = []; P.pending = null;
@@ -2015,7 +2028,7 @@ function refreshEvs(){
   // al final de una nota antes de respirar (o de un silencio) no cuenta si ya no se canta
   P.evs.forEach((e, i) => { const nx = P.evs[i + 1]; e.tail = P.breaths.some(b => near(b, e.e)) || P.pauses.some(q => near(q.beat, e.e)) || !nx || nx.s > e.e + .2; });
   P.viewB = s0;
-  P.range = voiceRange(v);
+  P.range = viewRange();
   P.status = P.scores = P.summary = null;
   $('#results').hidden = true;
   lyrKey = '';
@@ -2601,6 +2614,20 @@ function draw(){
     if (!last){ ctx.fillStyle = C.soft; ctx.font = '700 11px "Atkinson Hyperlegible", system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.fillText(measureLabel(P.song, k), x + 5, 12); }
   }
 
+  if (viewAll() && P.song.voices.length > 1){   // las otras voces, finitas y con su color, debajo de la tuya
+    const s0 = P.st[P.from - 1], e0 = P.st[P.to], cs = getComputedStyle(document.documentElement);
+    P.song.voices.forEach((v, vi) => {
+      if (v.id === P.voice) return;
+      ctx.fillStyle = cs.getPropertyValue(voiceColor(v, vi).slice(4, -1)).trim() || C.soft;
+      ctx.globalAlpha = .55;
+      v.ev.forEach(e => {
+        const s = Math.max(e.beat, s0), en = Math.min(e.beat + e.dur, e0); if (en <= s) return;
+        const x1 = xOf(s), x2 = xOf(en); if (x2 < gutter || x1 > w) return;
+        const bh = Math.min(Math.max(rowH * .45, 6), 10); rr(x1 + 1, yC(e.midi) - bh / 2, Math.max(x2 - x1 - 2, 4), bh, 4); ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+    });
+  }
   P.evs.forEach((e, i) => {
     const x1 = xOf(e.s), x2 = xOf(e.e); if (x2 < gutter || x1 > w) return;
     const y = yC(e.midi), bh = Math.min(Math.max(rowH * .78, 12), 18), bw = Math.max(x2 - x1 - 2, 5);
@@ -3305,7 +3332,12 @@ $('#phones').checked = usingPhones();
 $('#phones').addEventListener('change', e => setPhones(e.target.checked));
 $('#singGuide').addEventListener('change', e => { P.singGuide = e.target.checked; if (run) applyGains(run.mode === 'sing'); });
 
-$('#voiceSel').addEventListener('change', e => { if (!run) chooseVoice(e.target.value); });
+$('#voiceSel').addEventListener('change', e => {
+  if (run){ buildVoiceSel(); return; }
+  const all = e.target.value === '__todas';
+  try { localStorage.setItem('pt.verTodas', all ? '1' : '0'); } catch(x){}
+  if (all){ P.range = viewRange(); buildVoiceSel(); draw(); } else chooseVoice(e.target.value);
+});
 function buildMixer(){
   const mix = $('#mixer'); mix.innerHTML = '';
   const pf = S.perfil && S.perfil.lo != null ? S.perfil : null;
