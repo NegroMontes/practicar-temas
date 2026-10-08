@@ -314,6 +314,15 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 .prog .hint{display:block;margin:0}
 .spark{display:flex;gap:3px;align-items:flex-end;height:24px}
 .spark i{width:8px;background:var(--violet);border-radius:2px}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--soft);margin:0}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{display:inline-block;flex:none;width:24px;height:12px;border-radius:3px}
+.sw.acc{border:2px dashed var(--soft)}
+.sw.me{background:var(--violet)}
+.sw.line{height:0;border-top:2px solid var(--ink);border-radius:0}
+.vzgrid.three{grid-template-columns:repeat(3,1fr)}
+.vzgrid .cell.me{box-shadow:inset 0 0 0 2px var(--violet)}
+.big.soft{color:var(--soft)}
 #hzRoll{display:block;width:100%;height:220px;border-radius:12px;border:1px solid var(--line);background:var(--stage);margin:10px 0 4px}
 .harmline{grid-column:1/-1;margin:0;font-size:14px;color:var(--soft);min-height:20px}
 .harmline.ok b{color:var(--ok)}
@@ -753,7 +762,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '5.2', APP_FECHA = '2026-10-04';
+const APP_VERSION = '5.3', APP_FECHA = '2026-10-04';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -4743,31 +4752,43 @@ function harmonyDialog(gen, key){
   openDlg(`<h2 id="hzTitle"></h2>
     <p class="hint" style="margin-top:0" id="hzIntro"></p>
     <canvas id="hzRoll" role="img" aria-label="Las notas del ejercicio: en gris lo que suena, en violeta lo que cantás"></canvas>
-    <p class="hint" style="margin-top:0">Gris: lo que suena · violeta: lo que cantás · línea: tu voz.</p>
-    <div class="vzgrid"><div class="cell"><span class="lab">Cantá</span><span class="big" id="hzTarget">–</span><span class="hint" id="hzLabel" style="margin:0"></span></div>
-      <div class="cell"><span class="lab">Tu voz</span><span class="big" id="hzSung">–</span></div></div>
+    <p class="legend"><span><i class="sw acc"></i>Suena (no la cantes)</span><span><i class="sw me"></i>Tu nota: la que cantás</span><span><i class="sw line"></i>Tu voz</span></p>
+    <div class="vzgrid three"><div class="cell"><span class="lab">Suena</span><span class="big soft" id="hzAcc">–</span></div>
+      <div class="cell me"><span class="lab">Vos cantás</span><span class="big" id="hzTarget">–</span><span class="hint" id="hzLabel" style="margin:0"></span></div>
+      <div class="cell"><span class="lab">Tu voz ahora</span><span class="big" id="hzSung">–</span></div></div>
     <div class="gauge" aria-hidden="true"><div class="zone"></div><div class="mid"></div><div class="dot" id="hzDot"></div><span class="gl">bajo</span><span class="gr">alto</span></div>
     <p class="verdict" id="hzV" style="margin-top:6px"></p>
     <p class="hint" id="hzRes" style="margin-top:2px"></p>
     <div class="level"><span class="lab">Micrófono</span><div class="lvltrack"><div class="lvlbar" id="hzLvl"></div></div></div>
     <label class="switch"><input type="checkbox" id="hzGuide"><span>Con mi voz de guía, bajito</span></label>
-    <div class="dlgbtns"><button class="small" type="button" id="hzDemo">Escuchar cómo suena</button><button class="small" type="button" id="hzNew">Otro ejercicio</button>
+    <div class="dlgbtns"><button class="small" type="button" id="hzMine">Oír mi nota</button><button class="small" type="button" id="hzDemo">Escuchar cómo suena</button><button class="small" type="button" id="hzNew">Otro ejercicio</button>
       <button class="btn primary compact" type="button" id="hzGo">Cantar</button><button class="btn secondary compact" data-close type="button">Cerrar</button></div>`);
   $('#hzGuide').checked = armGuide();
   dlg.addEventListener('close', () => hzStop(false), {once:true});
   $('#hzDemo').addEventListener('click', hzDemo);
+  $('#hzMine').addEventListener('click', () => {   // solo tu nota (la que toca ahora o la próxima)
+    ensureAudio(); const n = hzNext(HZ.on || HZ.demo ? hzBeat() : -1); if (!n) return;
+    const nodes = []; playNote(master, n.midi, ac.currentTime + .03, 1.2, nodes); HZ.nodes.push(...nodes);
+  });
   $('#hzNew').addEventListener('click', () => { hzStop(false); HZ.ex = HZ.gen(); HZ.status = null; HZ.trace = []; hzShow(); });
   $('#hzGo').addEventListener('click', () => HZ.on ? hzStop(false) : hzSing());
   hzShow();
+}
+function hzBeat(){ return ac ? (ac.currentTime - audioDelay() - HZ.t0) / HZ.spb : -1; }
+function hzNext(b){ const ex = HZ.ex; return ex.tg.find(n => b >= n.beat && b < n.beat + n.dur) || ex.tg.find(n => n.beat > b) || ex.tg[0]; }
+function hzAccTxt(n){   // qué suena mientras cantás esa nota
+  const xs = HZ.ex.acc.filter(a => a.beat < n.beat + n.dur - .01 && a.beat + a.dur > n.beat + .01).sort((a, b) => b.midi - a.midi);
+  return xs.length ? xs.map(a => nameOf(a.midi)).join(' y ') : '–';
 }
 function hzShow(){
   const ex = HZ.ex;
   $('#hzTitle').textContent = ex.title;
   $('#hzIntro').textContent = (ex.sub ? ex.sub + ' ' : '') + ex.intro;
-  $('#hzTarget').textContent = nameOf(ex.tg[0].midi); $('#hzLabel').textContent = ex.tg[0].label;
+  $('#hzTarget').textContent = nameOf(ex.tg[0].midi); $('#hzLabel').textContent = ex.tg[0].label; $('#hzAcc').textContent = hzAccTxt(ex.tg[0]);
   $('#hzSung').textContent = '–'; $('#hzDot').style.opacity = 0;
   $('#hzV').textContent = ''; $('#hzV').className = 'verdict'; $('#hzRes').textContent = '';
   hzButtons(); hzDraw(null);
+  setTimeout(() => { if (!HZ.on && !HZ.demo) hzDraw(null); }, 60);   // por si el diálogo todavía no tenía su ancho
 }
 function hzButtons(){
   const g = $('#hzGo'); if (!g) return;
@@ -4818,7 +4839,7 @@ function hzTick(now){
     if (f){ HZ.hist.push(hzToMidi(f)); if (HZ.hist.length > 3) HZ.hist.shift(); HZ.lastV = now; }
     else if (now - HZ.lastV > 160) HZ.hist.length = 0;
     const i = ex.tg.findIndex(n => b >= n.beat && b < n.beat + n.dur), tg = ex.tg[i], nx = tg || ex.tg.find(n => n.beat > b);
-    setText($('#hzTarget'), nx ? nameOf(nx.midi) : '–'); setText($('#hzLabel'), nx ? nx.label : '');
+    setText($('#hzTarget'), nx ? nameOf(nx.midi) : '–'); setText($('#hzLabel'), nx ? nx.label : ''); setText($('#hzAcc'), nx ? hzAccTxt(nx) : '–');
     const v = $('#hzV'), dot = $('#hzDot');
     if (b < 0){ setText(v, `Empieza en ${Math.ceil(-b)}…`); v.className = 'verdict'; }
     else if (!tg){ setText(v, nx ? 'Preparate…' : ''); v.className = 'verdict'; }
@@ -4881,13 +4902,17 @@ function hzDraw(b){
   const rh = (H - 8) / (hi - lo + 1), y = m => 4 + (hi - m) * rh, x = bb => 8 + bb / end * (W - 16);
   c.fillStyle = C.stage; c.fillRect(0, 0, W, H);
   for (let m = lo; m <= hi; m++) if (isBlack(m)){ c.globalAlpha = .4; c.fillStyle = C.grid; c.fillRect(0, y(m), W, rh); c.globalAlpha = 1; }
-  ex.acc.forEach(n => { c.globalAlpha = n.g ? .3 : .55; c.fillStyle = C.soft; rrx(c, x(n.beat) + 1, y(n.midi) + 1, Math.max(3, x(n.beat + n.dur) - x(n.beat) - 2), Math.max(3, rh - 2), 4); c.fill(); });
-  c.globalAlpha = 1; c.textBaseline = 'middle';
+  c.textBaseline = 'middle';
+  ex.acc.forEach(n => {
+    const X = x(n.beat) + 1, w = Math.max(3, x(n.beat + n.dur) - x(n.beat) - 2), Y = y(n.midi) + 1, h = Math.max(3, rh - 2);
+    c.globalAlpha = n.g ? .5 : 1; c.setLineDash([5, 4]); c.strokeStyle = C.soft; c.lineWidth = 1.5; rrx(c, X, Y, w, h, 4); c.stroke(); c.setLineDash([]);
+    if (w > 26 && h >= 10){ c.fillStyle = C.soft; c.font = `700 ${Math.min(11, Math.floor(h - 1))}px ${CFONT}`; c.fillText(nameOf(n.midi), X + 5, Y + h / 2 + .5); }
+    c.globalAlpha = 1;
+  });
   ex.tg.forEach((n, i) => {
     const s = HZ.status && HZ.status[i], X = x(n.beat) + 1, w = Math.max(3, x(n.beat + n.dur) - x(n.beat) - 2), Y = y(n.midi) + 1, h = Math.max(3, rh - 2);
-    c.fillStyle = s ? (s === 'good' ? C.ok : s === 'partial' ? C.warn : C.bad) : C.violet; c.globalAlpha = s ? .9 : .3; rrx(c, X, Y, w, h, 4); c.fill();
-    c.globalAlpha = 1; c.strokeStyle = C.violet; c.lineWidth = 2; rrx(c, X, Y, w, h, 4); c.stroke();
-    if (w > 26 && h >= 10){ c.fillStyle = s ? C.stage : C.ink; c.font = `700 ${Math.min(12, Math.floor(h - 1))}px ${CFONT}`; c.fillText(nameOf(n.midi), X + 5, Y + h / 2 + .5); }
+    c.fillStyle = s ? (s === 'good' ? C.ok : s === 'partial' ? C.warn : C.bad) : C.violet; rrx(c, X, Y, w, h, 4); c.fill();
+    if (w > 26 && h >= 10){ c.fillStyle = C.stage; c.font = `700 ${Math.min(12, Math.floor(h - 1))}px ${CFONT}`; c.fillText(w > 70 ? 'Vos: ' + nameOf(n.midi) : nameOf(n.midi), X + 5, Y + h / 2 + .5); }
   });
   if (HZ.trace.length){
     c.strokeStyle = C.ink; c.globalAlpha = .85; c.lineWidth = 2; c.lineJoin = 'round'; c.beginPath();
