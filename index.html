@@ -396,6 +396,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
     <div class="filebtns" id="libMore" style="margin-top:16px">
       <button class="small" type="button" id="libReceive">Recibir un archivo</button>
       <button class="small" type="button" id="libShareApp">Compartir la aplicación</button>
+      <button class="small" type="button" id="libGh" hidden>🔑 Tu GitHub</button>
     </div>
     <p class="hint" id="libLocal" hidden>Tus temas se guardan en este dispositivo (en este navegador). Para tener una copia, usá «Compartir» › «Enviar archivo» de vez en cuando.</p>
     <p id="libTrash"></p>
@@ -762,7 +763,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--lin
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-const APP_VERSION = '5.4', APP_FECHA = '2026-10-04';
+const APP_VERSION = '5.5', APP_FECHA = '2026-10-10';
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -925,6 +926,53 @@ function idb(op, arg){
     };
   });
 }
+/* ---------- Tu GitHub (la llave) ----------
+   En la versión de GitHub (negromontes.github.io/practicar-temas), con la llave del dueño, los temas y las partituras
+   se leen y se guardan en su repositorio privado, igual que en la compu: canciones.json en la rama «datos» y cada
+   partitura en la rama «archivos» (el servidor de la compu los sincroniza). Leer un PDF o una foto (Audiveris) lo hace
+   GitHub: el pedido va a la rama «partituras» y .github/workflows/omr.yml lo lee (no hace falta la compu).
+   La llave es la misma de la Fordoquera (las dos páginas están en negromontes.github.io): si ya está, se usa sola. */
+const GH_KEY = 'fordoquera-github', GH_REPO = 'practicar-temas-pagina';
+const GHK = (() => { try { const g = JSON.parse(localStorage.getItem(GH_KEY) || 'null'); return g && g.token && g.owner ? g : null; } catch(e){ return null; } })();
+function ghReq(path, o = {}){
+  const k = o.key || GHK, h = {Authorization:'Bearer ' + k.token, Accept:o.raw ? 'application/vnd.github.raw+json' : 'application/vnd.github+json'};
+  if (o.body) h['Content-Type'] = 'application/json';
+  return fetch((k.api || 'https://api.github.com') + path, {method:o.method || 'GET', cache:'no-store', headers:h, body:o.body ? JSON.stringify(o.body) : undefined});
+}
+const ghRepo = (k) => `/repos/${(k || GHK).owner}/${GH_REPO}`;
+const b64bytes = u8 => { let out = ''; for (let i = 0; i < u8.length; i += 0x8000) out += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(out); };
+const b64text = t => b64bytes(new TextEncoder().encode(t));
+async function ghGetText(path, ref){            // → {sha, txt} o null
+  const r = await ghReq(`${ghRepo()}/contents/${path}?ref=${ref}`);
+  if (r.status === 404) return null;
+  if (!r.ok) { const e = new Error('GitHub ' + r.status); e.status = r.status; throw e; }
+  const j = await r.json();
+  if (j.content && j.encoding === 'base64') return {sha:j.sha, txt:new TextDecoder().decode(Uint8Array.from(atob(j.content.replace(/\s/g, '')), c => c.charCodeAt(0)))};
+  const b = await ghReq(`${ghRepo()}/git/blobs/${j.sha}`, {raw:true});
+  return {sha:j.sha, txt:await b.text()};
+}
+const ghPut = (path, b64, sha, message, branch) => ghReq(`${ghRepo()}/contents/${path}`, {method:'PUT', body:Object.assign({message, content:b64, branch}, sha ? {sha} : {})});
+async function ghPutNew(path, b64, message, branch){     // un archivo nuevo; si la rama todavía no existe, la crea
+  let r = await ghPut(path, b64, null, message, branch);
+  if (r.status === 404 || r.status === 422) {
+    const t = await (await ghReq(`${ghRepo()}/git/trees`, {method:'POST', body:{tree:[{path:'LEEME.txt', mode:'100644', type:'blob', content:'Archivos de Practicar temas.\n'}]}})).json();
+    const c = await (await ghReq(`${ghRepo()}/git/commits`, {method:'POST', body:{message:'Practicar temas', tree:t.sha, parents:[]}})).json();
+    await ghReq(`${ghRepo()}/git/refs`, {method:'POST', body:{ref:'refs/heads/' + branch, sha:c.sha}});
+    r = await ghPut(path, b64, null, message, branch);
+  }
+  if (!r.ok) throw new Error('No se pudo guardar en GitHub (' + r.status + ').');
+  return r;
+}
+// dos versiones de los temas (este dispositivo y otro): de cada tema queda la más nueva; si hay dudas, se conserva
+function mergeDatos(mio, otro){
+  const nuevo = (mio.savedAt || 0) >= (otro.savedAt || 0) ? mio : otro, viejo = nuevo === mio ? otro : mio;
+  const out = Object.assign({}, viejo, nuevo);
+  const by = (a, b, k) => { const m = new Map((b[k] || []).map(x => [x.id, x])); for (const x of a[k] || []) { const y = m.get(x.id); m.set(x.id, !y || (x.upd || x.created || 0) >= (y.upd || y.created || 0) ? x : y); } return [...m.values()]; };
+  out.songs = by(nuevo, viejo, 'songs'); out.folders = by(nuevo, viejo, 'folders');
+  out.savedAt = Math.max(mio.savedAt || 0, otro.savedAt || 0) + 1;
+  return out;
+}
+const GHS = {sha:null};
 const Store = {
   mode:null,
   async load(){
@@ -932,10 +980,29 @@ const Store = {
       const r = await fetch('api/datos', {cache:'no-store'});
       if (r.ok && (r.headers.get('content-type') || '').includes('json')){ this.mode = 'server'; return await r.json(); }
     } catch(e){}
+    if (GHK) {
+      try {
+        const f = await ghGetText('canciones.json', 'datos');
+        if (f) { this.mode = 'github'; GHS.sha = f.sha; INFO.omr = true; return JSON.parse(f.txt); }
+        setTimeout(() => toast('Todavía no están tus temas en GitHub: abrí Practicar temas en tu compu y esperá un minuto.', true), 800);
+      } catch(e){ setTimeout(() => toast(e.status === 401 ? 'Tu llave de GitHub venció: volvé a conectarla (…/practicar-temas/#llave).' : e.status === 404 || e.status === 403 ? 'Tu llave de GitHub no tiene acceso a practicar-temas-pagina: editala en GitHub y sumale ese repositorio.' : 'No se pudo leer tus temas de GitHub: lo que cambies queda en este navegador.', true), 800); }
+    }
     this.mode = 'local';
     try { return JSON.parse(localStorage.getItem(KEY_LS) || '{}'); } catch(e){ return {}; }
   },
   async save(data){
+    if (this.mode === 'github'){
+      data.savedAt = Date.now();
+      let r = await ghPut('canciones.json', b64text(JSON.stringify(data)), GHS.sha, 'Temas (desde la web)', 'datos');
+      if (r.status === 409 || r.status === 422) {          // se guardó desde otro lado: se juntan y se vuelve a guardar
+        const f = await ghGetText('canciones.json', 'datos');
+        const junto = mergeDatos(data, JSON.parse(f.txt)); Object.assign(S, junto);
+        r = await ghPut('canciones.json', b64text(JSON.stringify(junto)), f.sha, 'Temas (desde la web)', 'datos');
+      }
+      if (!r.ok) throw new Error('save');
+      GHS.sha = (await r.json()).content.sha;
+      return;
+    }
     const body = JSON.stringify(data);
     if (this.mode === 'server'){
       const r = await fetch('api/datos', {method:'POST', headers:{'Content-Type':'application/json'}, body});
@@ -943,6 +1010,14 @@ const Store = {
     } else localStorage.setItem(KEY_LS, body);
   },
   async putFile(file){
+    if (this.mode === 'github'){
+      if (file.size > 50 * 1024 * 1024) throw new Error('El archivo pesa más de 50 MB: subilo desde la compu.');
+      const ext = ((/\.[^.]+$/.exec(file.name) || [''])[0]).toLowerCase().replace(/[^.\w]/g, '');
+      const d = new Date(), nombre = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${String(d.getSeconds()).padStart(2, '0')}-${Math.random().toString(36).slice(2, 7)}${ext}`;
+      await ghPutNew(nombre, b64bytes(new Uint8Array(await file.arrayBuffer())), 'Partitura ' + nombre, 'archivos');
+      GHF.set('archivos/' + nombre, file);
+      return 'archivos/' + nombre;
+    }
     if (this.mode === 'server'){
       const r = await fetch('api/archivo?nombre=' + encodeURIComponent(file.name), {method:'POST', body:file});
       if (!r.ok) throw new Error('No se pudo subir el archivo.');
@@ -952,16 +1027,77 @@ const Store = {
   },
   async getBlob(ref){
     if (ref.startsWith('idb:')){ const r = await idb('get', ref.slice(4)); if (!r) throw new Error('No encontré el archivo.'); return r.blob; }
+    if (this.mode === 'github' && ref.startsWith('archivos/')) return ghFile(ref);
     const r = await fetch(ref); if (!r.ok) throw new Error('No encontré el archivo.'); return r.blob();
   },
-  async url(ref){ return ref.startsWith('idb:') ? URL.createObjectURL(await this.getBlob(ref)) : ref; },
+  async url(ref){ return ref.startsWith('idb:') || (this.mode === 'github' && ref.startsWith('archivos/')) ? URL.createObjectURL(await this.getBlob(ref)) : ref; },
   async delFile(ref){
     try {
       if (ref.startsWith('idb:')) await idb('delete', ref.slice(4));
+      else if (this.mode === 'github') {}            // en GitHub no se borra nada (si hay dudas, se conserva)
       else if (this.mode === 'server') await fetch('api/borrar-archivo', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ruta:ref})});
     } catch(e){}
   }
 };
+// las partituras de GitHub: quedan guardadas en este navegador (se bajan una sola vez)
+const GHF = new Map();
+async function ghFile(ref){
+  if (GHF.has(ref)) return GHF.get(ref);
+  let c = null;
+  try { c = await caches.open('practicar-temas-github'); const hit = await c.match('/__pt/' + ref); if (hit) { const b = await hit.blob(); GHF.set(ref, b); return b; } } catch(e){}
+  const r = await ghReq(`${ghRepo()}/contents/${encodeURIComponent(ref.slice(9))}?ref=archivos`, {raw:true});
+  if (!r.ok) throw new Error('No encontré el archivo en GitHub' + (r.status === 404 ? ': si lo subiste en la compu hace un ratito, esperá un minuto.' : '.'));
+  const b = await r.blob();
+  try { if (c) await c.put('/__pt/' + ref, new Response(b)); } catch(e){}
+  GHF.set(ref, b); return b;
+}
+// leer un PDF o una foto sin la compu: lo lee GitHub con Audiveris (rama «partituras»)
+async function ghLeerPartitura(f, avisar){
+  const blob = await Store.getBlob(f.ref), ext = ((/\.([^.]+)$/.exec(f.name) || /\.([^.]+)$/.exec(f.ref) || [])[1] || 'pdf').toLowerCase();
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  await ghPutNew(`pedidos/${id}.${ext}`, b64bytes(new Uint8Array(await blob.arrayBuffer())), 'Leer ' + f.name, 'partituras');
+  const t0 = Date.now();
+  while (Date.now() - t0 < 20 * 60000) {
+    await new Promise(r => setTimeout(r, 8000));
+    const min = Math.floor((Date.now() - t0) / 60000), seg = Math.round((Date.now() - t0) / 1000) % 60;
+    avisar(`GitHub está leyendo «${f.name}» con Audiveris… (${min ? min + ' min ' : ''}${seg} s). Suele tardar uno o dos minutos; podés dejar esta ventana abierta.`);
+    const ok = await ghGetText(`resultados/${id}.musicxml`, 'partituras').catch(() => null);
+    if (ok) return ok.txt;
+    const mal = await ghGetText(`resultados/${id}.error.txt`, 'partituras').catch(() => null);
+    if (mal) throw new Error(mal.txt.trim());
+  }
+  throw new Error('GitHub tardó demasiado en leer la partitura. Probá de nuevo en un rato.');
+}
+// conectar o desconectar la llave (…/practicar-temas/#llave)
+function ghDialog(){
+  if (GHK) {
+    openDlg(`<h2>🔑 Tu GitHub</h2><p>Conectado como <b>${esc(GHK.owner)}</b>${Store.mode === 'github' ? ': tus temas y partituras se guardan en tu repositorio privado.' : '.'}</p>
+      <p class="hint">Es la misma llave de la Fordoquera. Desconectar la borra de este navegador (también para la Fordoquera); tus temas no se borran.</p>
+      <div class="dlgbtns"><button class="btn secondary compact" data-close type="button">Cerrar</button><button class="btn secondary compact" id="ghOut" type="button">Desconectar</button></div>`);
+    $('#ghOut').onclick = async () => { try { localStorage.removeItem(GH_KEY); localStorage.removeItem(KEY_LS); await caches.delete('practicar-temas-github'); } catch(e){} location.hash = ''; location.reload(); };
+    return;
+  }
+  openDlg(`<h2>🔑 Tu versión completa</h2>
+    <p>Con tu llave de GitHub, esta página usa <b>tus temas y partituras</b> (los de tu repositorio privado) y guarda ahí lo que cambies; tu compu los junta con los suyos. Leer un PDF o una foto lo hace GitHub, sin tu compu.</p>
+    <p class="hint">Si ya tenés la llave de la Fordoquera, editala en GitHub (Settings › Developer settings › Fine-grained tokens › Edit) y sumale el repositorio <b>practicar-temas-pagina</b>. Si no, creá una en <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub</a> con acceso a <b>practicar-temas-pagina</b> y permiso <b>Contents: Read and write</b>.</p>
+    <input class="input" id="ghTok" type="password" placeholder="github_pat_…" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box">
+    <p class="hint" id="ghMsg"></p>
+    <div class="dlgbtns"><button class="btn secondary compact" data-close type="button">Cancelar</button><button class="btn primary compact" id="ghGo" type="button">Conectar</button></div>`);
+  $('#ghGo').onclick = async () => {
+    const token = $('#ghTok').value.trim(), msg = t => $('#ghMsg').textContent = t, api = window.__ghApi;
+    if (!token) return msg('Pegá la llave primero.');
+    msg('Probando la llave…');
+    try {
+      const k = {token, owner:'', api};
+      const u = await ghReq('/user', {key:k}); if (!u.ok) throw 'Esa llave no anda: ¿la copiaste entera?';
+      k.owner = (await u.json()).login;
+      const r = await ghReq(ghRepo(k), {key:k}); if (!r.ok) throw `La llave no tiene acceso al repositorio «${GH_REPO}».`;
+      localStorage.setItem(GH_KEY, JSON.stringify(Object.assign({token, owner:k.owner}, api ? {api} : {})));
+      location.hash = ''; location.reload();
+    } catch(e){ msg(typeof e === 'string' ? e : 'No se pudo conectar con GitHub.'); }
+  };
+}
+
 let S = {folders:[], songs:[], perfil:null};
 let saveTimer = 0, dirty = false;
 function save(){
@@ -1693,11 +1829,13 @@ function renderLib(fid){
   const empty = !subs.length && !songs.length;
   $('#libEmpty').hidden = !empty;
   $('#libEmpty').textContent = trash ? 'La papelera está vacía.' : fid ? 'Esta carpeta está vacía. Agregá un tema o una carpeta adentro.' : 'Todavía no hay temas. Tocá «+ Tema» para cargar una partitura.';
-  $('#libMore').hidden = !!fid; $('#libLocal').hidden = !!fid || Store.mode === 'server';
+  $('#libMore').hidden = !!fid; $('#libLocal').hidden = !!fid || Store.mode !== 'local';
+  $('#libGh').hidden = Store.mode === 'server'; $('#libGh').textContent = Store.mode === 'github' ? '🔑 Conectado a tu GitHub' : '🔑 Tu GitHub';
   const nt = S.songs.filter(s => s.deleted).length;
   $('#libTrash').innerHTML = !trash && !fid && nt ? `<a class="small" href="#/carpeta/papelera">${ICON.trash.replace('<svg', '<svg width="16" height="16"')} Papelera (${nt})</a>` : '';
 }
 $('#libShareApp').addEventListener('click', () => shareDialog('app'));
+$('#libGh').addEventListener('click', ghDialog);
 $('#libReceive').addEventListener('click', async () => {
   const fs = await pickFiles('.json,application/json', false); if (!fs.length) return;
   try { receiveDialog(JSON.parse(await fs[0].text())); } catch(e){ errDlg(new Error('Ese archivo no es un tema de «Practicar temas».')); }
@@ -1802,12 +1940,17 @@ $('#eFiles').addEventListener('click', async e => {
   if (b.dataset.act === 'del' && confirm(`¿Borrar «${f.name}» de este tema?`)){ Store.delFile(f.ref); s.files = s.files.filter(x => x !== f); save(); renderEdit(); }
 });
 async function voicesFromImage(s, f){
-  busyDlg(`Leyendo «${f.name}» con Audiveris… tarda unos 15 segundos por página.`);
+  busyDlg(Store.mode === 'github' ? `Mandando «${f.name}» a GitHub para que lo lea con Audiveris…` : `Leyendo «${f.name}» con Audiveris… tarda unos 15 segundos por página.`);
   try {
-    const r = await fetch('api/leer-partitura', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ruta:f.ref})});
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || 'No se pudo leer la partitura.');
-    const parsed = parseMusicXML(j.xml, f.name);
+    let xml;
+    if (Store.mode === 'github') xml = await ghLeerPartitura(f, t => { const el = $('.busy span:last-child', dlg); if (el) el.textContent = t; });
+    else {
+      const r = await fetch('api/leer-partitura', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ruta:f.ref})});
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'No se pudo leer la partitura.');
+      xml = j.xml;
+    }
+    const parsed = parseMusicXML(xml, f.name);
     importDialog(parsed, {song:s, fileName:f.name, omr:true, after:() => renderEdit()});
   } catch(err){ errDlg(err); }
 }
@@ -4985,6 +5128,7 @@ if (/[?&]prueba\b/.test(location.search)) window.PT = {parseMscx, parseMusicXML,
   readColors();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { readColors(); draw(); });
   route();
+  if (location.hash === '#llave' && Store.mode !== 'server') { history.replaceState(null, '', location.pathname + location.search); ghDialog(); }
 })();
 })();
 </script>
